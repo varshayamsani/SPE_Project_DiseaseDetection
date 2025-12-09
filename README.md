@@ -52,7 +52,7 @@ A web application that uses machine learning (pretrained models) to detect disea
 
 2. **Open your browser and navigate to:**
    ```
-   http://localhost:5000
+   http://localhost:5001
    ```
 
 3. **Enter symptoms in the text area** (e.g., "I have a fever, cough, body aches, and fatigue")
