@@ -783,6 +783,6 @@ if __name__ == '__main__':
     load_models()
     logger.info("Models loaded, starting application")
     
-    # Run application, added comment
+    # Run application
     app.run(debug=False, host='0.0.0.0', port=5001)
 
