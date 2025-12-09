@@ -1,0 +1,55 @@
+---
+# ELK Stack role: Deploy Elasticsearch, Logstash, and Kibana
+# This role handles ELK Stack deployment for log aggregation
+
+- name: Create ELK Stack directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/elk/elasticsearch/data
+    - /opt/elk/logstash/config
+    - /opt/elk/kibana/config
+
+- name: Copy Logstash configuration
+  copy:
+    src: "{{ playbook_dir }}/../logstash/config/logstash.conf"
+    dest: /opt/elk/logstash/config/logstash.conf
+    mode: '0644'
+
+- name: Copy Docker Compose for ELK Stack
+  copy:
+    src: "{{ playbook_dir }}/../docker-compose.yml"
+    dest: /opt/{{ app_name }}/docker-compose.yml
+    mode: '0644'
+
+- name: Start ELK Stack with Docker Compose
+  docker_compose:
+    project_src: /opt/{{ app_name }}
+    state: present
+  when: elk_deploy is defined and elk_deploy
+
+- name: Wait for Elasticsearch to be ready
+  uri:
+    url: http://localhost:9200
+    method: GET
+    status_code: 200
+  register: elasticsearch_ready
+  until: elasticsearch_ready.status == 200
+  retries: 30
+  delay: 10
+  when: elk_deploy is defined and elk_deploy
+
+- name: Wait for Kibana to be ready
+  uri:
+    url: http://localhost:5601
+    method: GET
+    status_code: 200
+  register: kibana_ready
+  until: kibana_ready.status == 200
+  retries: 30
+  delay: 10
+  when: elk_deploy is defined and elk_deploy
+
+

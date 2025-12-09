@@ -1,0 +1,113 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: disease-detector-predictive-hpa
+  namespace: disease-detector
+  annotations:
+    # Predictive HPA using historical patterns
+    description: "Predictive autoscaling based on time-series analysis and historical patterns"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: disease-detector
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  # Standard resource metrics
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  # Custom metrics for prediction-based scaling
+  - type: Pods
+    pods:
+      metric:
+        name: prediction_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "10"  # Scale up if > 10 requests/sec per pod
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25  # Conservative scale-down
+        periodSeconds: 60
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Min  # Use most conservative policy
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100  # Aggressive scale-up
+        periodSeconds: 15
+      - type: Pods
+        value: 3
+        periodSeconds: 15
+      selectPolicy: Max  # Use most aggressive policy
+      # Predictive scaling: scale up before peak hours
+      # This is handled by external metrics or cron-based scaling
+
+---
+# Cron-based predictive scaling (for known patterns)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: predictive-scale-up
+  namespace: disease-detector
+spec:
+  # Scale up before peak hours (9 AM daily)
+  schedule: "0 8 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: kubectl
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Scale up to 5 replicas before peak hours
+              kubectl scale deployment disease-detector --replicas=5 -n disease-detector
+              echo "Predictive scale-up completed at $(date)"
+          restartPolicy: OnFailure
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: predictive-scale-down
+  namespace: disease-detector
+spec:
+  # Scale down after peak hours (6 PM daily)
+  schedule: "0 18 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: kubectl
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Scale down to 2 replicas after peak hours
+              kubectl scale deployment disease-detector --replicas=2 -n disease-detector
+              echo "Predictive scale-down completed at $(date)"
+          restartPolicy: OnFailure
+
+

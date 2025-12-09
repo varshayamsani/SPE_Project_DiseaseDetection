@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+patients.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+logs/
+*.log
+
+# Data
+data/
+*.csv
+
+# Docker
+.docker/
+
+# Ansible
+ansible/.vault_pass
+ansible/vault-credentials.txt
+ansible/vault-init.txt
+
+# Vault
+vault-credentials.txt
+vault-init.txt
+vault/data/
+vault/audit.log
+
+# Jenkins
+.jenkins/
+
+# Kubernetes
+k8s/secrets.yaml
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

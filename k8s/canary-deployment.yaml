@@ -1,0 +1,183 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: disease-detector-rollout
+  namespace: disease-detector
+spec:
+  replicas: 4
+  strategy:
+    canary:
+      # Canary deployment strategy for gradual rollout
+      steps:
+      - setWeight: 10  # 10% traffic to new version
+      - pause: {duration: 5m}  # Monitor for 5 minutes
+      - setWeight: 25  # Increase to 25%
+      - pause: {duration: 5m}
+      - setWeight: 50  # Increase to 50%
+      - pause: {duration: 5m}
+      - setWeight: 75  # Increase to 75%
+      - pause: {duration: 5m}
+      - setWeight: 100  # Full rollout
+      canaryService: disease-detector-canary
+      stableService: disease-detector-stable
+      trafficRouting:
+        istio:
+          virtualService:
+            name: disease-detector-vs
+            routes:
+            - primary
+      analysis:
+        templates:
+        - templateName: success-rate
+        args:
+        - name: service-name
+          value: disease-detector-canary
+        startingStep: 2
+        interval: 30s
+        successCondition: result[0].value >= 0.95  # 95% success rate required
+        failureCondition: result[0].value < 0.90   # Rollback if < 90%
+        failureLimit: 2
+  selector:
+    matchLabels:
+      app: disease-detector
+  template:
+    metadata:
+      labels:
+        app: disease-detector
+        version: canary
+    spec:
+      containers:
+      - name: disease-detector
+        image: disease-detector:latest
+        ports:
+        - containerPort: 5001
+        env:
+        - name: FLASK_ENV
+          value: "production"
+        - name: DEPLOYMENT_TYPE
+          value: "canary"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5001
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+# Alternative: Native Kubernetes Canary using two deployments
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: disease-detector-stable
+  namespace: disease-detector
+  labels:
+    app: disease-detector
+    version: stable
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: disease-detector
+      version: stable
+  template:
+    metadata:
+      labels:
+        app: disease-detector
+        version: stable
+    spec:
+      containers:
+      - name: disease-detector
+        image: disease-detector:stable
+        ports:
+        - containerPort: 5001
+        env:
+        - name: DEPLOYMENT_TYPE
+          value: "stable"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: disease-detector-canary
+  namespace: disease-detector
+  labels:
+    app: disease-detector
+    version: canary
+spec:
+  replicas: 1  # Start with 1 pod (25% of traffic)
+  selector:
+    matchLabels:
+      app: disease-detector
+      version: canary
+  template:
+    metadata:
+      labels:
+        app: disease-detector
+        version: canary
+    spec:
+      containers:
+      - name: disease-detector
+        image: disease-detector:latest  # New version
+        ports:
+        - containerPort: 5001
+        env:
+        - name: DEPLOYMENT_TYPE
+          value: "canary"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+
+---
+# Service for canary traffic routing
+apiVersion: v1
+kind: Service
+metadata:
+  name: disease-detector-canary
+  namespace: disease-detector
+spec:
+  selector:
+    app: disease-detector
+    version: canary
+  ports:
+  - port: 5001
+    targetPort: 5001
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: disease-detector-stable
+  namespace: disease-detector
+spec:
+  selector:
+    app: disease-detector
+    version: stable
+  ports:
+  - port: 5001
+    targetPort: 5001
+
+

@@ -1,0 +1,57 @@
+---
+# Kubernetes role: Install and configure Kubernetes
+# This role handles K8s cluster setup and application deployment
+
+- name: Add Kubernetes GPG key
+  apt_key:
+    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Add Kubernetes repository
+  apt_repository:
+    repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install Kubernetes tools
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Copy Kubernetes manifests
+  copy:
+    src: "{{ item }}"
+    dest: /opt/{{ app_name }}/k8s/
+  loop:
+    - deployment.yaml
+    - service.yaml
+    - hpa.yaml
+    - configmap.yaml
+  when: k8s_manifests is defined
+
+- name: Create Kubernetes namespace
+  kubernetes.core.k8s:
+    name: "{{ app_name }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+  when: k8s_deploy is defined and k8s_deploy
+
+- name: Apply Kubernetes manifests
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('file', item) | from_yaml }}"
+    namespace: "{{ app_name }}"
+  loop:
+    - "{{ playbook_dir }}/../k8s/deployment.yaml"
+    - "{{ playbook_dir }}/../k8s/service.yaml"
+    - "{{ playbook_dir }}/../k8s/hpa.yaml"
+  when: k8s_deploy is defined and k8s_deploy
+
+

@@ -1,0 +1,31 @@
+---
+# Main Ansible Playbook for Disease Detector DevOps Deployment
+# This playbook orchestrates the complete deployment using modular roles
+
+- name: Deploy Disease Detector Application
+  hosts: all
+  become: yes
+  vars:
+    app_name: disease-detector
+    app_port: 5001
+    docker_image: "{{ vault_docker_image | default('disease-detector:latest') }}"
+    docker_registry: "{{ vault_docker_registry | default('docker.io') }}"
+    
+  roles:
+    # Role 1: Common system setup
+    - role: common
+      tags: common
+    
+    # Role 2: Docker installation and setup
+    - role: docker
+      tags: docker
+    
+    # Role 3: Kubernetes setup and deployment
+    - role: k8s
+      tags: k8s
+    
+    # Role 4: ELK Stack deployment
+    - role: elk
+      tags: elk
+
+

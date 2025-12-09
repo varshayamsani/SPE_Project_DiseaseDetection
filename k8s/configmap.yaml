@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: disease-detector-config
+  namespace: disease-detector
+data:
+  FLASK_ENV: "production"
+  LOG_LEVEL: "INFO"
+  ELASTICSEARCH_HOST: "elasticsearch.disease-detector.svc.cluster.local"
+  ELASTICSEARCH_PORT: "9200"
+
+

@@ -1,0 +1,45 @@
+---
+# Common role: System setup and prerequisites
+# This role handles basic system configuration
+
+- name: Update system packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+  when: ansible_os_family == "Debian"
+
+- name: Install required system packages
+  apt:
+    name:
+      - python3
+      - python3-pip
+      - curl
+      - wget
+      - git
+      - unzip
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Create application directory
+  file:
+    path: /opt/{{ app_name }}
+    state: directory
+    mode: '0755'
+
+- name: Create log directory
+  file:
+    path: /var/log/{{ app_name }}
+    state: directory
+    mode: '0755'
+
+- name: Create data directory
+  file:
+    path: /opt/{{ app_name }}/data
+    state: directory
+    mode: '0755'
+
+
