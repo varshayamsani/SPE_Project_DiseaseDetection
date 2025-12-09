@@ -8,8 +8,8 @@ pipeline {
     // IMPORTANT: Update DOCKER_IMAGE with your Docker Hub username
     // Example: DOCKER_IMAGE = 'your-username/disease-detector'
     environment {
-        DOCKER_HUB_CREDENTIALS = credentials('docker-hub-credentials')
-        DOCKER_IMAGE = 'YOUR_DOCKERHUB_USERNAME/disease-detector'  // TODO: Replace with your Docker Hub username
+        DOCKER_HUB_CREDENTIALS = credentials('dockerhub')
+        DOCKER_IMAGE = 'varshayamsani/disease-detector'  // TODO: Replace with your Docker Hub username
         DOCKER_TAG = "${env.BUILD_NUMBER}"
         KUBERNETES_NAMESPACE = 'disease-detector'
         VAULT_ADDR = 'http://vault:8200'
