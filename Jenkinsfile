@@ -38,30 +38,48 @@ pipeline {
             }
         }
         
-        // Stage 3: Build Docker Image
+//         // Stage 3: Build Docker Image
+//         stage('Docker Build') {
+//             steps {
+//                 echo 'Building Docker image...'
+//                 script {
+//                     dockerImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+//                     dockerImage.tag("${DOCKER_IMAGE}:latest")
+//                 }
+//             }
+//         }
         stage('Docker Build') {
-            steps {
-                echo 'Building Docker image...'
-                script {
-                    dockerImage = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
-                    dockerImage.tag("${DOCKER_IMAGE}:latest")
-                }
-            }
+          steps {
+            sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+            sh "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
+          }
         }
-        
-        // Stage 4: Push to Docker Hub
+
         stage('Push to Docker Hub') {
-            steps {
-                echo 'Pushing Docker image to Docker Hub...'
-                script {
-                    docker.withRegistry('https://index.docker.io/v1/', DOCKER_HUB_CREDENTIALS) {
-                        dockerImage.push("${DOCKER_TAG}")
-                        dockerImage.push("latest")
-                    }
-                }
+          steps {
+            withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+              sh '''
+                echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+                docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                docker push ${DOCKER_IMAGE}:latest
+              '''
             }
+          }
         }
-        
+//
+//         // Stage 4: Push to Docker Hub
+//         stage('Push to Docker Hub') {
+//             steps {
+//                 echo 'Pushing Docker image to Docker Hub...'
+//                 script {
+//                     docker.withRegistry('https://index.docker.io/v1/', DOCKER_HUB_CREDENTIALS) {
+//                         dockerImage.push("${DOCKER_TAG}")
+//                         dockerImage.push("latest")
+//                     }
+//                 }
+//             }
+//         }
+//
         // Stage 5: Deploy to Kubernetes
         stage('Deploy to Kubernetes') {
             steps {
