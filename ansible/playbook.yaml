@@ -1,7 +1,7 @@
 ---
 # Ansible Playbook for Disease Detector Kubernetes Deployment
 # Deploys Kubernetes resources and manages deployments
-# Used by Jenkins CI/CD pipeline
+
 
 - name: Deploy Kubernetes resources and manage deployments
   hosts: localhost
