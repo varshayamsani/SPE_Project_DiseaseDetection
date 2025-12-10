@@ -106,7 +106,8 @@ MODELS_CONFIG = [
     {
         'name': 'Bio_ClinicalBERT',
         'model_name': 'emilyalsentzer/Bio_ClinicalBERT',
-        'weight': 0.40,  # Higher weight for clinical model
+#         'weight': 0.40,  # Higher weight for clinical model
+        'weight':1,
         'tokenizer': None,
         'model': None
     }
