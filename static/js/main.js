@@ -1,7 +1,16 @@
 // API base URL - use /api prefix when deployed in K8s, empty for local development
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-    ? '' 
-    : '/api';
+//const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+//    ? ''
+//    : '/api';
+// API base URL:
+// - When running Flask locally on port 5001/5000 → use '' (direct to Flask)
+// - Otherwise (K8s / Nginx / random NodePort)   → use '/api' (proxied by Nginx)
+const isLocalFlask =
+    window.location.port === '5001' ||   // python app.py (backend directly)
+    window.location.port === '5000';     // in case you use 5000 sometimes
+
+const API_BASE = isLocalFlask ? '' : '/api';
+
 
 const predictBtn = document.getElementById('predictBtn');
 const symptomsInput = document.getElementById('symptoms');
