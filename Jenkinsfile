@@ -129,20 +129,35 @@ pipeline {
 //                             kubectl get ns
 //                         """
 //                     }
-                    withCredentials([credentialsId: 'kubeconfig', serverUrl: '']) {
+withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+    echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
+    sh """
+        # Use the kubeconfig file from Jenkins secret
+        export KUBECONFIG=${KUBECONFIG_FILE}
+
+        cd ansible
+        ansible-playbook -i inventory.yml playbook.yaml \
+            -e "kubeconfig_path=${KUBECONFIG_FILE}" \
+            -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
+            -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
+            -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
+            -v
+    """
+}
+
 //                     withKubeConfig([credentialsId: 'kubeconfig', serverUrl: '']) {
-                        // Run Ansible playbook (playbook.yaml) to deploy the application
-                        echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
-                        sh """
-                            cd ansible
-                            ansible-playbook -i inventory.yml playbook.yaml \
-                                -e "kubeconfig_path=\${KUBECONFIG}" \
-                                -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
-                                -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
-                                -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
-                                -v
-                        """
-                    }
+//                         // Run Ansible playbook (playbook.yaml) to deploy the application
+//                         echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
+//                         sh """
+//                             cd ansible
+//                             ansible-playbook -i inventory.yml playbook.yaml \
+//                                 -e "kubeconfig_path=\${KUBECONFIG}" \
+//                                 -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
+//                                 -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
+//                                 -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
+//                                 -v
+//                         """
+//                     }
                 }
             }
         }
