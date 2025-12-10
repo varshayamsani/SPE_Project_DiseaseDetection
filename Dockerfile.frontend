@@ -1,0 +1,25 @@
+# Frontend Dockerfile - Nginx serving static files
+FROM nginx:alpine
+
+# Copy static files and templates
+COPY static/ /usr/share/nginx/html/static/
+COPY templates/ /usr/share/nginx/html/templates/
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Create index.html from template (or copy pre-built)
+# For production, you might want to build static assets
+COPY templates/index.html /usr/share/nginx/html/
+COPY templates/dashboard.html /usr/share/nginx/html/dashboard.html
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]
+

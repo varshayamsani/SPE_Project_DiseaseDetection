@@ -178,8 +178,13 @@
     <script>
         let autoRefreshInterval = null;
 
+        // API base URL
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? '' 
+            : '/api';
+        
         function loadDashboard() {
-            fetch('/api/performance')
+            fetch(`${API_BASE}/performance`)
                 .then(response => response.json())
                 .then(data => {
                     // Update metrics

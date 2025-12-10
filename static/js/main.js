@@ -1,3 +1,8 @@
+// API base URL - use /api prefix when deployed in K8s, empty for local development
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? '' 
+    : '/api';
+
 const predictBtn = document.getElementById('predictBtn');
 const symptomsInput = document.getElementById('symptoms');
 const resultsSection = document.getElementById('results');
@@ -48,7 +53,7 @@ registerBtn.addEventListener('click', async () => {
     }
     
     try {
-        const response = await fetch('/patient/register', {
+        const response = await fetch(`${API_BASE}/patient/register`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -93,7 +98,7 @@ async function loadPatientHistory() {
     }
     
     try {
-        const response = await fetch(`/patient/${patientId}`);
+        const response = await fetch(`${API_BASE}/patient/${patientId}`);
         const data = await response.json();
         
         if (!response.ok) {
@@ -167,7 +172,7 @@ clearHistoryBtn.addEventListener('click', async () => {
     }
     
     try {
-        const response = await fetch(`/patient/${currentPatientId}/history`, {
+        const response = await fetch(`${API_BASE}/patient/${currentPatientId}/history`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
@@ -215,7 +220,8 @@ predictBtn.addEventListener('click', async () => {
             requestBody.patient_id = currentPatientId;
         }
         
-        const response = await fetch('/predict', {
+        // Use API_BASE for consistency
+        const response = await fetch(`${API_BASE}/predict`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

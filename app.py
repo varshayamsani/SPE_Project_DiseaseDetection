@@ -15,7 +15,19 @@ import socket
 import sys
 
 app = Flask(__name__)
-CORS(app)
+# Configure CORS to allow frontend service
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://disease-detector-frontend.disease-detector.svc.cluster.local",
+            "http://localhost:3000",
+            "http://localhost:80",
+            "http://localhost"
+        ],
+        "methods": ["GET", "POST", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Database configuration
 DATABASE = os.getenv('DATABASE_PATH', 'patients.db')
