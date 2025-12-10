@@ -163,21 +163,53 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
         }
         
         // Stage 6: Health Check
+//         stage('Health Check') {
+//             steps {
+//                 echo 'Performing health checks...'
+//                 sh '''
+//                     sleep 15
+//                     # Check backend health
+//                     kubectl run health-check --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
+//                         curl -f http://disease-detector-backend-service:5001/health || exit 1
+//
+//                     # Check frontend health
+//                     kubectl run frontend-health-check --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
+//                         curl -f http://disease-detector-frontend-service/health || exit 1
+//                 '''
+//             }
+//         }
         stage('Health Check') {
             steps {
                 echo 'Performing health checks...'
                 sh '''
-                    sleep 15
-                    # Check backend health
-                    kubectl run health-check --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-                        curl -f http://disease-detector-backend-service:5001/health || exit 1
-                    
-                    # Check frontend health
-                    kubectl run frontend-health-check --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-                        curl -f http://disease-detector-frontend-service/health || exit 1
+                    NAMESPACE=${KUBERNETES_NAMESPACE}
+
+                    echo "Waiting for backend to become healthy..."
+                    ATTEMPTS=12   # 12 * 10s = 120 seconds
+                    SLEEP=10
+
+                    for i in $(seq 1 $ATTEMPTS); do
+                      echo "Backend health attempt $i/$ATTEMPTS..."
+                      if kubectl run backend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
+                           curl -fsS http://disease-detector-backend-service:5001/health; then
+                        echo "Backend is healthy!"
+                        break
+                      fi
+                      echo "Backend not ready yet, sleeping ${SLEEP}s..."
+                      sleep $SLEEP
+                      if [ "$i" -eq "$ATTEMPTS" ]; then
+                        echo "Backend failed health check after ${ATTEMPTS} attempts"
+                        exit 1
+                      fi
+                    done
+
+                    echo "Checking frontend health..."
+                    kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
+                      curl -f http://disease-detector-frontend-service/health || exit 1
                 '''
             }
         }
+
     }
     
     // Post-build actions
