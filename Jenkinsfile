@@ -206,9 +206,6 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                       fi
                     done
 
-//                     echo "Checking frontend health..."
-//                     kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-//                       curl -f http://disease-detector-frontend-service/health || exit 1
                 '''
             }
         }
