@@ -183,6 +183,9 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                 echo 'Performing health checks...'
                 sh '''
                     NAMESPACE=${KUBERNETES_NAMESPACE}
+                    echo "Checking frontend health..."
+                    kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
+                    curl -f http://disease-detector-frontend-service/health || exit 1
 
                     echo "Waiting for backend to become healthy..."
                     ATTEMPTS=20   # 20 * 20s = 120 seconds
@@ -203,9 +206,9 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                       fi
                     done
 
-                    echo "Checking frontend health..."
-                    kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-                      curl -f http://disease-detector-frontend-service/health || exit 1
+//                     echo "Checking frontend health..."
+//                     kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
+//                       curl -f http://disease-detector-frontend-service/health || exit 1
                 '''
             }
         }
