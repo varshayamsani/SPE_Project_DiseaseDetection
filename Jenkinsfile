@@ -185,8 +185,8 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                     NAMESPACE=${KUBERNETES_NAMESPACE}
 
                     echo "Waiting for backend to become healthy..."
-                    ATTEMPTS=12   # 12 * 10s = 120 seconds
-                    SLEEP=10
+                    ATTEMPTS=20   # 20 * 20s = 120 seconds
+                    SLEEP=20
 
                     for i in $(seq 1 $ATTEMPTS); do
                       echo "Backend health attempt $i/$ATTEMPTS..."
