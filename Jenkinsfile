@@ -123,7 +123,14 @@ pipeline {
                     
                     // Configure access to Kubernetes cluster using kubeconfig credentials
                     // Uses Jenkins Kubernetes plugin withKubeConfig
-                    withKubeConfig([credentialsId: 'kubeconfig', serverUrl: '']) {
+//                     withCredentials([file(credentialsId: 'kubeconfig', variable: 'KCFG')]) {
+//                         sh """
+//                             export KUBECONFIG=$KCFG
+//                             kubectl get ns
+//                         """
+//                     }
+                    withCredentials([credentialsId: 'kubeconfig', serverUrl: '']) {
+//                     withKubeConfig([credentialsId: 'kubeconfig', serverUrl: '']) {
                         // Run Ansible playbook (playbook.yaml) to deploy the application
                         echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
                         sh """
