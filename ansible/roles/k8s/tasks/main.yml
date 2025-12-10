@@ -1,57 +1,92 @@
 ---
-# Kubernetes role: Install and configure Kubernetes
-# This role handles K8s cluster setup and application deployment
+# Kubernetes role: Deploy application to Kubernetes using Ansible
+# This role uses kubectl commands wrapped in Ansible for deployment
 
-- name: Add Kubernetes GPG key
-  apt_key:
-    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-    state: present
-  when: ansible_os_family == "Debian"
+- name: Check if kubectl is installed
+  command: which kubectl
+  register: kubectl_check
+  changed_when: false
+  failed_when: false
 
-- name: Add Kubernetes repository
-  apt_repository:
-    repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
-    state: present
-  when: ansible_os_family == "Debian"
+- name: Fail if kubectl is not installed
+  fail:
+    msg: "kubectl is not installed. Please install kubectl first."
+  when: kubectl_check.rc != 0
 
-- name: Install Kubernetes tools
-  apt:
-    name:
-      - kubelet
-      - kubeadm
-      - kubectl
-    state: present
-    update_cache: yes
-  when: ansible_os_family == "Debian"
+- name: Verify Kubernetes cluster connection
+  command: kubectl cluster-info
+  register: cluster_info
+  changed_when: false
+  failed_when: false
 
-- name: Copy Kubernetes manifests
-  copy:
-    src: "{{ item }}"
-    dest: /opt/{{ app_name }}/k8s/
-  loop:
-    - deployment.yaml
-    - service.yaml
-    - hpa.yaml
-    - configmap.yaml
-  when: k8s_manifests is defined
+- name: Display cluster information
+  debug:
+    msg: "{{ cluster_info.stdout }}"
 
 - name: Create Kubernetes namespace
-  kubernetes.core.k8s:
-    name: "{{ app_name }}"
-    api_version: v1
-    kind: Namespace
-    state: present
-  when: k8s_deploy is defined and k8s_deploy
+  command: kubectl create namespace {{ kubernetes_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: true
 
 - name: Apply Kubernetes manifests
-  kubernetes.core.k8s:
-    state: present
-    definition: "{{ lookup('file', item) | from_yaml }}"
-    namespace: "{{ app_name }}"
+  command: kubectl apply -f {{ playbook_dir }}/../../k8s/{{ item }} -n {{ kubernetes_namespace }}
   loop:
-    - "{{ playbook_dir }}/../k8s/deployment.yaml"
-    - "{{ playbook_dir }}/../k8s/service.yaml"
-    - "{{ playbook_dir }}/../k8s/hpa.yaml"
-  when: k8s_deploy is defined and k8s_deploy
+    - namespace.yaml
+    - pvc.yaml
+    - configmap.yaml
+    - frontend-nginx-configmap.yaml
+    - backend-service.yaml
+    - frontend-service.yaml
+    - backend-hpa.yaml
+    - frontend-hpa.yaml
+  register: apply_results
+  changed_when: "'created' in apply_results.stdout or 'configured' in apply_results.stdout"
 
+- name: Update backend deployment image
+  command: kubectl set image deployment/disease-detector-backend backend={{ docker_image_backend }} -n {{ kubernetes_namespace }}
+  register: backend_update
+  changed_when: "'updated' in backend_update.stdout or 'unchanged' not in backend_update.stdout"
+  failed_when: false
 
+- name: Apply backend deployment if update failed
+  command: kubectl apply -f {{ playbook_dir }}/../../k8s/backend-deployment.yaml -n {{ kubernetes_namespace }}
+  when: backend_update.rc != 0
+  register: backend_apply
+  changed_when: "'created' in backend_apply.stdout or 'configured' in backend_apply.stdout"
+
+- name: Update frontend deployment image
+  command: kubectl set image deployment/disease-detector-frontend frontend={{ docker_image_frontend }} -n {{ kubernetes_namespace }}
+  register: frontend_update
+  changed_when: "'updated' in frontend_update.stdout or 'unchanged' not in frontend_update.stdout"
+  failed_when: false
+
+- name: Apply frontend deployment if update failed
+  command: kubectl apply -f {{ playbook_dir }}/../../k8s/frontend-deployment.yaml -n {{ kubernetes_namespace }}
+  when: frontend_update.rc != 0
+  register: frontend_apply
+  changed_when: "'created' in frontend_apply.stdout or 'configured' in frontend_apply.stdout"
+
+- name: Wait for backend deployment rollout
+  command: kubectl rollout status deployment/disease-detector-backend -n {{ kubernetes_namespace }} --timeout=5m
+  register: backend_rollout
+  changed_when: false
+
+- name: Wait for frontend deployment rollout
+  command: kubectl rollout status deployment/disease-detector-frontend -n {{ kubernetes_namespace }} --timeout=5m
+  register: frontend_rollout
+  changed_when: false
+
+- name: Get backend deployment status
+  command: kubectl get deployment disease-detector-backend -n {{ kubernetes_namespace }} -o jsonpath='{.status.readyReplicas}/{.spec.replicas}'
+  register: backend_status
+  changed_when: false
+
+- name: Get frontend deployment status
+  command: kubectl get deployment disease-detector-frontend -n {{ kubernetes_namespace }} -o jsonpath='{.status.readyReplicas}/{.spec.replicas}'
+  register: frontend_status
+  changed_when: false
+
+- name: Display deployment status
+  debug:
+    msg: |
+      Backend Deployment: {{ backend_status.stdout }} replicas ready
+      Frontend Deployment: {{ frontend_status.stdout }} replicas ready

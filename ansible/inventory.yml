@@ -1,14 +1,18 @@
 ---
 # Ansible Inventory File
 # Define your target servers here
+# Used by Jenkins pipeline for deployment
 
 all:
   children:
+    # Development/CI environment (Jenkins uses this)
     dev:
       hosts:
         localhost:
           ansible_connection: local
-          ansible_user: ubuntu
+          ansible_user: ${USER}
+          # For Jenkins, this will use the Jenkins user
+    # Production environment
     prod:
       hosts:
         production-server:

@@ -1,0 +1,89 @@
+---
+# Ansible Playbook for Disease Detector Kubernetes Deployment
+# Deploys Kubernetes resources and manages deployments
+# Used by Jenkins CI/CD pipeline
+
+- name: Deploy Kubernetes resources and manage deployments
+  hosts: localhost
+  become: no
+  gather_facts: no
+  
+  vars:
+    kubeconfig_path: "{{ kubeconfig_path | default('') }}"
+    kubernetes_namespace: "{{ kubernetes_namespace | default('disease-detector') }}"
+    docker_image_backend: "{{ docker_image_backend | default('varshayamsani/disease-detector-backend:latest') }}"
+    docker_image_frontend: "{{ docker_image_frontend | default('varshayamsani/disease-detector-frontend:latest') }}"
+    
+  tasks:
+    - name: Ensure kubectl is available
+      command: kubectl version --client
+      register: kubectl_version
+      failed_when: kubectl_version.rc != 0
+      changed_when: false
+      
+    - name: Display kubectl version
+      debug:
+        msg: "{{ kubectl_version.stdout }}"
+        
+    - name: Apply Kubernetes deployment YAML files
+      shell: |
+        {% if kubeconfig_path %}
+        export KUBECONFIG={{ kubeconfig_path }}
+        {% endif %}
+        kubectl apply -f {{ playbook_dir }}/../k8s/namespace.yaml --validate=false
+        kubectl apply -f {{ playbook_dir }}/../k8s/pvc.yaml --validate=false
+        kubectl apply -f {{ playbook_dir }}/../k8s/configmap.yaml -n {{ kubernetes_namespace }} --validate=false
+        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-nginx-configmap.yaml -n {{ kubernetes_namespace }} --validate=false
+        kubectl apply -f {{ playbook_dir }}/../k8s/backend-service.yaml -n {{ kubernetes_namespace }} --validate=false
+        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-service.yaml -n {{ kubernetes_namespace }} --validate=false
+        kubectl apply -f {{ playbook_dir }}/../k8s/backend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false
+        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false
+        kubectl set image deployment/disease-detector-backend backend={{ docker_image_backend }} -n {{ kubernetes_namespace }} || \
+        kubectl apply -f {{ playbook_dir }}/../k8s/backend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false
+        kubectl set image deployment/disease-detector-frontend frontend={{ docker_image_frontend }} -n {{ kubernetes_namespace }} || \
+        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false
+        kubectl rollout restart deployment/disease-detector-backend -n {{ kubernetes_namespace }}
+        kubectl rollout restart deployment/disease-detector-frontend -n {{ kubernetes_namespace }}
+      args:
+        chdir: "{{ playbook_dir }}/.."
+      register: apply_result
+      
+    - name: Display apply results
+      debug:
+        msg: "{{ apply_result.stdout }}"
+        
+    - name: Verify Kubernetes deployment
+      shell: |
+        {% if kubeconfig_path %}
+        export KUBECONFIG={{ kubeconfig_path }}
+        {% endif %}
+        kubectl get deployments -n {{ kubernetes_namespace }}
+      register: kubectl_deployments
+      failed_when: kubectl_deployments.rc != 0
+      changed_when: false
+      
+    - name: Check if deployments list is empty
+      set_fact:
+        deployments_empty: "{{ kubectl_deployments.stdout_lines | length <= 1 }}"
+      when: kubectl_deployments.stdout_lines is defined
+      
+    - name: Fail if no deployments found
+      fail:
+        msg: |
+          ============================================
+          ERROR: No deployments found!
+          ============================================
+          Namespace: {{ kubernetes_namespace }}
+          This indicates that the deployment may have failed.
+          Please check the logs and verify the Kubernetes cluster.
+          ============================================
+      when: deployments_empty | default(false)
+      
+    - name: Print Kubernetes deployments
+      debug:
+        msg: |
+          ============================================
+          Kubernetes Deployments Status
+          ============================================
+          {{ kubectl_deployments.stdout }}
+          ============================================

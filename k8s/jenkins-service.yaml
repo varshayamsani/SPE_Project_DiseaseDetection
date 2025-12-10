@@ -1,0 +1,62 @@
+---
+# Jenkins Service Account for Kubernetes Deployment
+# This service account allows Jenkins to deploy applications to Kubernetes
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-service-account
+  namespace: disease-detector
+  labels:
+    app: jenkins
+    component: ci-cd
+---
+# ClusterRole for Jenkins to manage deployments
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jenkins-deployer
+  labels:
+    app: jenkins
+    component: ci-cd
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "services", "configmaps", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+---
+# ClusterRoleBinding to bind ServiceAccount to ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jenkins-deployer-binding
+  labels:
+    app: jenkins
+    component: ci-cd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jenkins-deployer
+subjects:
+  - kind: ServiceAccount
+    name: jenkins-service-account
+    namespace: disease-detector
+---
+# Secret for Jenkins service account token (for kubeconfig)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jenkins-service-account-token
+  namespace: disease-detector
+  annotations:
+    kubernetes.io/service-account.name: jenkins-service-account
+type: kubernetes.io/service-account-token
+

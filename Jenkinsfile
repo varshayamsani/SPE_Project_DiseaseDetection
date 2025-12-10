@@ -97,37 +97,46 @@ pipeline {
                 }
             }
         }
-        // Stage 5: Deploy to Kubernetes
-        stage('Deploy to Kubernetes') {
+        // Stage 5: Deploy with Kubernetes
+        // Purpose: Deploy the application using Kubernetes and Ansible
+        // Key Actions:
+        //   - Configures access to the Kubernetes cluster using the kubeconfig credentials
+        //   - Runs an Ansible playbook (playbook.yaml) to deploy the application
+        //   - Ensures all configurations and services are applied as required
+        //   - Deploys the application in the Kubernetes cluster for production or testing
+        stage('Deploy with Kubernetes') {
             steps {
-                echo 'Deploying to Kubernetes...'
-                sh """
-                    # Apply all K8s manifests first (creates resources if they don't exist)
-                    kubectl apply -f k8s/namespace.yaml
-                    kubectl apply -f k8s/pvc.yaml
-                    kubectl apply -f k8s/configmap.yaml
-                    kubectl apply -f k8s/frontend-nginx-configmap.yaml
-                    kubectl apply -f k8s/backend-service.yaml
-                    kubectl apply -f k8s/frontend-service.yaml
-                    kubectl apply -f k8s/backend-hpa.yaml
-                    kubectl apply -f k8s/frontend-hpa.yaml
+                echo '========================================'
+                echo 'Stage: Deploy with Kubernetes'
+                echo 'Purpose: Deploy application using Kubernetes and Ansible'
+                echo '========================================'
+                
+                script {
+                    // Install Ansible if not available
+                    sh '''
+                        if ! command -v ansible-playbook &> /dev/null; then
+                            echo "Installing Ansible..."
+                            pip3 install ansible || pip install ansible
+                        fi
+                        ansible-playbook --version
+                    '''
                     
-                    # Update backend deployment with new image
-                    kubectl set image deployment/disease-detector-backend \
-                        backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG} \
-                        -n ${KUBERNETES_NAMESPACE} || \
-                    kubectl apply -f k8s/backend-deployment.yaml -n ${KUBERNETES_NAMESPACE}
-                    
-                    # Update frontend deployment with new image
-                    kubectl set image deployment/disease-detector-frontend \
-                        frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG} \
-                        -n ${KUBERNETES_NAMESPACE} || \
-                    kubectl apply -f k8s/frontend-deployment.yaml -n ${KUBERNETES_NAMESPACE}
-                    
-                    # Wait for rollouts
-                    kubectl rollout status deployment/disease-detector-backend -n ${KUBERNETES_NAMESPACE} --timeout=5m
-                    kubectl rollout status deployment/disease-detector-frontend -n ${KUBERNETES_NAMESPACE} --timeout=5m
-                """
+                    // Configure access to Kubernetes cluster using kubeconfig credentials
+                    // Uses Jenkins Kubernetes plugin withKubeConfig
+                    withKubeConfig([credentialsId: 'kubeconfig', serverUrl: '']) {
+                        // Run Ansible playbook (playbook.yaml) to deploy the application
+                        echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
+                        sh """
+                            cd ansible
+                            ansible-playbook -i inventory.yml playbook.yaml \
+                                -e "kubeconfig_path=\${KUBECONFIG}" \
+                                -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
+                                -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
+                                -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
+                                -v
+                        """
+                    }
+                }
             }
         }
         
