@@ -1,89 +1,177 @@
+<!--<!DOCTYPE html>-->
+<!--<html lang="en">-->
+<!--<head>-->
+<!--    <meta charset="UTF-8">-->
+<!--    <meta name="viewport" content="width=device-width, initial-scale=1.0">-->
+<!--    <title>AI Disease Detection System</title>-->
+<!--    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">-->
+<!--</head>-->
+<!--<body>-->
+<!--    <div class="container">-->
+<!--        <header>-->
+<!--            <h1>🏥 AI Disease Detection System</h1>-->
+<!--            <p class="subtitle">Enter your symptoms and get AI-powered disease predictions</p>-->
+<!--        </header>-->
+
+<!--        <main>-->
+<!--            <div class="patient-section">-->
+<!--                <div class="form-group">-->
+<!--                    <label for="patientId">Patient ID (Optional - for medical history tracking):</label>-->
+<!--                    <div class="patient-input-group">-->
+<!--                        <input -->
+<!--                            type="text" -->
+<!--                            id="patientId" -->
+<!--                            placeholder="Enter Patient ID (e.g., P001)"-->
+<!--                        />-->
+<!--                        <input -->
+<!--                            type="text" -->
+<!--                            id="patientName" -->
+<!--                            placeholder="Patient Name (optional)"-->
+<!--                            style="display: none;"-->
+<!--                        />-->
+<!--                        <button id="registerBtn" class="register-btn" style="display: none;">-->
+<!--                            Register New Patient-->
+<!--                        </button>-->
+<!--                        <button id="loadHistoryBtn" class="load-history-btn">-->
+<!--                            Load History-->
+<!--                        </button>-->
+<!--                    </div>-->
+<!--                </div>-->
+<!--                <div id="patientInfo" class="patient-info" style="display: none;">-->
+<!--                    <p><strong>Patient:</strong> <span id="patientNameDisplay"></span></p>-->
+<!--                </div>-->
+<!--            </div>-->
+
+<!--            <div id="historySection" class="history-section" style="display: none;">-->
+<!--                <div class="history-header">-->
+<!--                    <h3>📋 Medical History</h3>-->
+<!--                    <button id="clearHistoryBtn" class="clear-history-btn" style="display: none;">-->
+<!--                        🗑️ Clear History-->
+<!--                    </button>-->
+<!--                </div>-->
+<!--                <div id="historyContainer"></div>-->
+<!--            </div>-->
+
+<!--            <div class="input-section">-->
+<!--                <div class="form-group">-->
+<!--                    <label for="symptoms">Describe your symptoms:</label>-->
+<!--                    <textarea -->
+<!--                        id="symptoms" -->
+<!--                        placeholder="e.g., I have a fever, cough, body aches, and fatigue..."-->
+<!--                        rows="5"-->
+<!--                    ></textarea>-->
+<!--                </div>-->
+<!--                <button id="predictBtn" class="predict-btn">-->
+<!--                    <span id="btnText">Detect Disease</span>-->
+<!--                    <span id="btnLoader" class="loader" style="display: none;"></span>-->
+<!--                </button>-->
+<!--            </div>-->
+
+<!--            <div id="results" class="results-section" style="display: none;">-->
+<!--                <h2>Prediction Results</h2>-->
+<!--                <div id="predictionsContainer"></div>-->
+<!--            </div>-->
+
+<!--            <div id="error" class="error-message" style="display: none;"></div>-->
+<!--        </main>-->
+
+<!--        <footer>-->
+<!--            <p><strong>Disclaimer:</strong> This is a demonstration tool. Always consult with a healthcare professional for accurate diagnosis and treatment.</p>-->
+<!--            <p style="margin-top: 10px;">-->
+<!--                <a href="/dashboard" style="color: white; text-decoration: underline;">📊 View Performance Dashboard</a>-->
+<!--            </p>-->
+<!--        </footer>-->
+<!--    </div>-->
+
+<!--    <script src="{{ url_for('static', filename='js/main.js') }}"></script>-->
+<!--</body>-->
+<!--</html>-->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Disease Detection System</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🏥 AI Disease Detection System</h1>
-            <p class="subtitle">Enter your symptoms and get AI-powered disease predictions</p>
-        </header>
+<div class="container">
+    <header>
+        <h1>🏥 AI Disease Detection System</h1>
+        <p class="subtitle">Enter your symptoms and get AI-powered disease predictions</p>
+    </header>
 
-        <main>
-            <div class="patient-section">
-                <div class="form-group">
-                    <label for="patientId">Patient ID (Optional - for medical history tracking):</label>
-                    <div class="patient-input-group">
-                        <input 
-                            type="text" 
-                            id="patientId" 
+    <main>
+        <div class="patient-section">
+            <div class="form-group">
+                <label for="patientId">Patient ID (Optional - for medical history tracking):</label>
+                <div class="patient-input-group">
+                    <input
+                            type="text"
+                            id="patientId"
                             placeholder="Enter Patient ID (e.g., P001)"
-                        />
-                        <input 
-                            type="text" 
-                            id="patientName" 
+                    />
+                    <input
+                            type="text"
+                            id="patientName"
                             placeholder="Patient Name (optional)"
                             style="display: none;"
-                        />
-                        <button id="registerBtn" class="register-btn" style="display: none;">
-                            Register New Patient
-                        </button>
-                        <button id="loadHistoryBtn" class="load-history-btn">
-                            Load History
-                        </button>
-                    </div>
-                </div>
-                <div id="patientInfo" class="patient-info" style="display: none;">
-                    <p><strong>Patient:</strong> <span id="patientNameDisplay"></span></p>
-                </div>
-            </div>
-
-            <div id="historySection" class="history-section" style="display: none;">
-                <div class="history-header">
-                    <h3>📋 Medical History</h3>
-                    <button id="clearHistoryBtn" class="clear-history-btn" style="display: none;">
-                        🗑️ Clear History
+                    />
+                    <button id="registerBtn" class="register-btn" style="display: none;">
+                        Register New Patient
+                    </button>
+                    <button id="loadHistoryBtn" class="load-history-btn">
+                        Load History
                     </button>
                 </div>
-                <div id="historyContainer"></div>
             </div>
+            <div id="patientInfo" class="patient-info" style="display: none;">
+                <p><strong>Patient:</strong> <span id="patientNameDisplay"></span></p>
+            </div>
+        </div>
 
-            <div class="input-section">
-                <div class="form-group">
-                    <label for="symptoms">Describe your symptoms:</label>
-                    <textarea 
-                        id="symptoms" 
-                        placeholder="e.g., I have a fever, cough, body aches, and fatigue..."
-                        rows="5"
-                    ></textarea>
-                </div>
-                <button id="predictBtn" class="predict-btn">
-                    <span id="btnText">Detect Disease</span>
-                    <span id="btnLoader" class="loader" style="display: none;"></span>
+        <div id="historySection" class="history-section" style="display: none;">
+            <div class="history-header">
+                <h3>📋 Medical History</h3>
+                <button id="clearHistoryBtn" class="clear-history-btn" style="display: none;">
+                    🗑️ Clear History
                 </button>
             </div>
+            <div id="historyContainer"></div>
+        </div>
 
-            <div id="results" class="results-section" style="display: none;">
-                <h2>Prediction Results</h2>
-                <div id="predictionsContainer"></div>
+        <div class="input-section">
+            <div class="form-group">
+                <label for="symptoms">Describe your symptoms:</label>
+                <textarea
+                        id="symptoms"
+                        placeholder="e.g., I have a fever, cough, body aches, and fatigue..."
+                        rows="5"
+                ></textarea>
             </div>
+            <button id="predictBtn" class="predict-btn">
+                <span id="btnText">Detect Disease</span>
+                <span id="btnLoader" class="loader" style="display: none;"></span>
+            </button>
+        </div>
 
-            <div id="error" class="error-message" style="display: none;"></div>
-        </main>
+        <div id="results" class="results-section" style="display: none;">
+            <h2>Prediction Results</h2>
+            <div id="predictionsContainer"></div>
+        </div>
 
-        <footer>
-            <p><strong>Disclaimer:</strong> This is a demonstration tool. Always consult with a healthcare professional for accurate diagnosis and treatment.</p>
-            <p style="margin-top: 10px;">
-                <a href="/dashboard" style="color: white; text-decoration: underline;">📊 View Performance Dashboard</a>
-            </p>
-        </footer>
-    </div>
+        <div id="error" class="error-message" style="display: none;"></div>
+    </main>
 
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <footer>
+        <p><strong>Disclaimer:</strong> This is a demonstration tool. Always consult with a healthcare professional for accurate diagnosis and treatment.</p>
+        <p style="margin-top: 10px;">
+            <a href="/dashboard" style="color: white; text-decoration: underline;">📊 View Performance Dashboard</a>
+        </p>
+    </footer>
+</div>
+
+<script src="/static/js/main.js"></script>
 </body>
 </html>
-
