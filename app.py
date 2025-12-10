@@ -109,21 +109,22 @@ MODELS_CONFIG = [
         'weight': 0.40,  # Higher weight for clinical model
         'tokenizer': None,
         'model': None
-    },
-    {
-        'name': 'PubMedBERT',
-        'model_name': 'microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext',
-        'weight': 0.35,
-        'tokenizer': None,
-        'model': None
-    },
-    {
-        'name': 'BioBERT',
-        'model_name': 'dmis-lab/biobert-v1.1',
-        'weight': 0.25,
-        'tokenizer': None,
-        'model': None
     }
+#     },
+#     {
+#         'name': 'PubMedBERT',
+#         'model_name': 'microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext',
+#         'weight': 0.35,
+#         'tokenizer': None,
+#         'model': None
+#     },
+#     {
+#         'name': 'BioBERT',
+#         'model_name': 'dmis-lab/biobert-v1.1',
+#         'weight': 0.25,
+#         'tokenizer': None,
+#         'model': None
+#     }
 ]
 
 # Fallback to simpler models if some fail to load
