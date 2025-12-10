@@ -121,7 +121,7 @@ pipeline {
                         ansible-playbook --version
                     '''
                     
-                    // Configure access to Kubernetes cluster using kubeconfig credentials
+
                     // Uses Jenkins Kubernetes plugin withKubeConfig
 //                     withCredentials([file(credentialsId: 'kubeconfig', variable: 'KCFG')]) {
 //                         sh """
