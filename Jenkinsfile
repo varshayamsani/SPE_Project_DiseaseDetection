@@ -141,16 +141,81 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
         # Use the kubeconfig file from Jenkins secret (not interpolated by Groovy)
         export KUBECONFIG="$KUBECONFIG_FILE"
         
+        # Display diagnostic information
+        echo "=========================================="
+        echo "Kubernetes Cluster Diagnostic Information"
+        echo "=========================================="
+        echo "Kubeconfig file: $KUBECONFIG_FILE"
+        echo "Kubeconfig exists: $([ -f "$KUBECONFIG_FILE" ] && echo "Yes" || echo "No")"
+        echo ""
+        
+        # Check kubectl version
+        echo "kubectl version:"
+        kubectl version --client 2>&1 || echo "Warning: kubectl version check failed"
+        echo ""
+        
+        # Show current context (if kubeconfig is valid)
+        echo "Current context:"
+        kubectl config current-context 2>&1 || echo "Warning: Could not get current context"
+        echo ""
+        
+        # Show server URL (if kubeconfig is valid)
+        echo "Cluster server URL:"
+        kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>&1 || echo "Warning: Could not get server URL"
+        echo ""
+        echo "=========================================="
+        echo ""
+        
         # Verify cluster connectivity before proceeding
         echo "Verifying Kubernetes cluster connectivity..."
-        if ! kubectl cluster-info --request-timeout=15s &>/dev/null; then
-            echo "ERROR: Cannot connect to Kubernetes cluster. Please check:"
-            echo "  1. Is the cluster running?"
-            echo "  2. Is the kubeconfig file valid?"
-            echo "  3. Is the cluster accessible from this Jenkins node?"
+        CLUSTER_INFO_OUTPUT=$(kubectl cluster-info --request-timeout=15s 2>&1)
+        CLUSTER_INFO_EXIT=$?
+        
+        if [ $CLUSTER_INFO_EXIT -ne 0 ]; then
+            echo ""
+            echo "=========================================="
+            echo "ERROR: Cannot connect to Kubernetes cluster"
+            echo "=========================================="
+            echo ""
+            echo "kubectl cluster-info output:"
+            echo "$CLUSTER_INFO_OUTPUT"
+            echo ""
+            echo "Troubleshooting steps:"
+            echo "  1. Verify the cluster is running:"
+            echo "     - For minikube: run 'minikube status'"
+            echo "     - For Docker Desktop: check Kubernetes is enabled in settings"
+            echo "     - For remote cluster: verify network connectivity"
+            echo ""
+            echo "  2. Verify kubeconfig file is valid:"
+            echo "     - Check the kubeconfig file exists and is readable"
+            echo "     - Verify the server URL is correct"
+            echo "     - Ensure certificates are valid (not expired)"
+            echo ""
+            echo "  3. Check cluster accessibility from Jenkins node:"
+            echo "     - If using localhost (127.0.0.1), Jenkins must run on same machine"
+            echo "     - For remote clusters, verify firewall rules allow access"
+            echo "     - Test network connectivity: ping/telnet to cluster server"
+            echo ""
+            echo "  4. Current configuration:"
+            kubectl config view --minify 2>&1 | head -20 || echo "Could not display config"
+            echo ""
+            echo "=========================================="
             exit 1
         fi
-        echo "Cluster connectivity verified."
+        
+        echo "Cluster connectivity verified:"
+        echo "$CLUSTER_INFO_OUTPUT"
+        echo ""
+        
+        # Additional verification: check if we can get nodes
+        echo "Verifying node access..."
+        if kubectl get nodes --request-timeout=10s &>/dev/null; then
+            echo "✅ Successfully connected to cluster"
+            kubectl get nodes --request-timeout=10s
+        else
+            echo "⚠️  Warning: Could not retrieve nodes, but cluster-info succeeded"
+        fi
+        echo ""
         
         cd ansible
         ansible-playbook -i inventory.yml playbook.yaml \
