@@ -98,23 +98,81 @@ pipeline {
             }
         }
         // Stage 4.5: Start ELK stack locally via docker compose (Elasticsearch, Logstash, Kibana)
+        // stage('Start ELK') {
+        //     steps {
+        //         echo 'Starting Elasticsearch, Logstash, Kibana via docker compose...'
+        //         sh '''
+
+
+        //             set -e
+        //             export COMPOSE_PROJECT_NAME=${JOB_NAME:-disease-detector}
+        //             if command -v docker-compose >/dev/null 2>&1; then
+        //               COMPOSE_CMD="docker-compose"
+        //             else
+        //               COMPOSE_CMD="docker compose"
+        //             fi
+        //             $COMPOSE_CMD -f docker-compose.yml up -d --remove-orphans elasticsearch logstash kibana
+        //         '''
+        //     }
+        // }
         stage('Start ELK') {
-            steps {
-                echo 'Starting Elasticsearch, Logstash, Kibana via docker compose...'
-                sh '''
+  steps {
+    echo 'Starting Elasticsearch, Logstash, Kibana via docker compose...'
+    sh '''
+      set -euo pipefail
 
+      # project name (keeps resources per-job isolated)
+      export COMPOSE_PROJECT_NAME=${JOB_NAME:-disease-detector}
 
-                    set -e
-                    export COMPOSE_PROJECT_NAME=${JOB_NAME:-disease-detector}
-                    if command -v docker-compose >/dev/null 2>&1; then
-                      COMPOSE_CMD="docker-compose"
-                    else
-                      COMPOSE_CMD="docker compose"
-                    fi
-                    $COMPOSE_CMD -f docker-compose.yml up -d --remove-orphans elasticsearch logstash kibana
-                '''
-            }
-        }
+      # pick compose command (supports both v1 and v2)
+      if command -v docker-compose >/dev/null 2>&1; then
+        COMPOSE_CMD="docker-compose"
+      else
+        COMPOSE_CMD="docker compose"
+      fi
+
+      # -----------------------
+      # 1) Best-effort cleanup
+      # -----------------------
+      echo "Cleaning pre-existing containers / networks for project: $COMPOSE_PROJECT_NAME"
+      # remove exact named containers if present (silently ignore errors)
+      docker rm -f ${COMPOSE_PROJECT_NAME}_elasticsearch_1 ${COMPOSE_PROJECT_NAME}_logstash_1 ${COMPOSE_PROJECT_NAME}_kibana_1 2>/dev/null || true
+
+      # remove any container whose name includes the project name and service name
+      docker ps -aq --filter "name=${COMPOSE_PROJECT_NAME}.*elasticsearch" | xargs -r docker rm -f 2>/dev/null || true
+      docker ps -aq --filter "name=${COMPOSE_PROJECT_NAME}.*kibana" | xargs -r docker rm -f 2>/dev/null || true
+      docker ps -aq --filter "name=${COMPOSE_PROJECT_NAME}.*logstash" | xargs -r docker rm -f 2>/dev/null || true
+
+      # bring down the compose stack to free networks/ports
+      $COMPOSE_CMD -f docker-compose.yml down --remove-orphans || true
+
+      # small sleep to let Docker free sockets (helps on macOS/Docker Desktop)
+      sleep 2
+
+      # -----------------------
+      # 2) Start fresh
+      # -----------------------
+      echo "Starting ELK stack..."
+      $COMPOSE_CMD -f docker-compose.yml up -d --remove-orphans --force-recreate elasticsearch logstash kibana
+
+      # -----------------------
+      # 3) Wait for health (optional)
+      # -----------------------
+      # Wait for Elasticsearch to respond on its container port (compose internal networking)
+      echo "Waiting for Elasticsearch (container) to be healthy..."
+      for i in $(seq 1 30); do
+        # use docker-compose exec if available, fallback to curl from host to mapped host port if you expose it
+        if $COMPOSE_CMD -f docker-compose.yml exec -T elasticsearch /bin/bash -c "curl -sS localhost:9200 >/dev/null 2>&1"; then
+          echo "Elasticsearch responded."
+          break
+        fi
+        echo "sleeping ... ($i)"
+        sleep 2
+      done
+    '''
+  }
+}
+
         // Stage 5: Deploy with Kubernetes
         // Purpose: Deploy the application using Kubernetes and Ansible
         // Key Actions:
