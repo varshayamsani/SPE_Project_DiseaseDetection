@@ -100,6 +100,7 @@ echo ""
 
 # 6. Test cluster connectivity
 echo "6. Testing cluster connectivity..."
+echo "   (This may take up to 15 seconds...)"
 CLUSTER_INFO=$(kubectl cluster-info --request-timeout=15s 2>&1)
 CLUSTER_INFO_EXIT=$?
 
@@ -121,6 +122,22 @@ else
     if [[ "$SERVER_URL" == *"127.0.0.1"* ]] || [[ "$SERVER_URL" == *"localhost"* ]]; then
         echo "⚠️  Localhost detected in server URL: $SERVER_URL"
         echo ""
+        echo "This appears to be a local cluster (minikube/Docker Desktop)."
+        echo ""
+        echo "Checking if minikube is running..."
+        if command -v minikube &> /dev/null; then
+            MINIKUBE_STATUS=$(minikube status 2>&1)
+            if echo "$MINIKUBE_STATUS" | grep -q "host: Running"; then
+                echo "   ✅ Minikube is running"
+            else
+                echo "   ❌ Minikube is NOT running"
+                echo ""
+                echo "   To start minikube, run:"
+                echo "   minikube start"
+                echo ""
+            fi
+        fi
+        
         echo "If Jenkins runs on a different machine, localhost won't work."
         echo "Solutions:"
         echo "  1. Ensure Jenkins runs on the same machine as the cluster"
