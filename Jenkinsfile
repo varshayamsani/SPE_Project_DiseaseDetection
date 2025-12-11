@@ -168,8 +168,30 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
         
         # Verify cluster connectivity before proceeding
         echo "Verifying Kubernetes cluster connectivity..."
-        CLUSTER_INFO_OUTPUT=$(kubectl cluster-info --request-timeout=15s 2>&1)
-        CLUSTER_INFO_EXIT=$?
+        echo "Attempting connection with retries..."
+        
+        CLUSTER_INFO_EXIT=1
+        CLUSTER_INFO_OUTPUT=""
+        MAX_RETRIES=3
+        RETRY_DELAY=5
+        
+        for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i/$MAX_RETRIES..."
+            CLUSTER_INFO_OUTPUT=$(kubectl cluster-info --request-timeout=20s 2>&1)
+            CLUSTER_INFO_EXIT=$?
+            
+            if [ $CLUSTER_INFO_EXIT -eq 0 ]; then
+                echo "✅ Successfully connected to cluster!"
+                break
+            else
+                if [ $i -lt $MAX_RETRIES ]; then
+                    echo "⚠️  Connection failed, retrying in ${RETRY_DELAY}s..."
+                    echo "Error: $CLUSTER_INFO_OUTPUT"
+                    sleep $RETRY_DELAY
+                    RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+                fi
+            fi
+        done
         
         if [ $CLUSTER_INFO_EXIT -ne 0 ]; then
             echo ""
@@ -180,6 +202,20 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             echo "kubectl cluster-info output:"
             echo "$CLUSTER_INFO_OUTPUT"
             echo ""
+            
+            # Detect if running in Docker
+            if [ -f /.dockerenv ] || grep -q docker /proc/self/cgroup 2>/dev/null; then
+                echo "⚠️  Jenkins appears to be running in Docker"
+                echo ""
+                echo "If using minikube, try updating kubeconfig to use:"
+                echo "  - host.docker.internal (macOS/Windows Docker Desktop)"
+                echo "  - Host machine IP address"
+                echo ""
+                echo "Run this script to fix:"
+                echo "  ./scripts/fix-kubeconfig-for-jenkins.sh"
+                echo ""
+            fi
+            
             echo "Troubleshooting steps:"
             echo "  1. Verify the cluster is running:"
             echo "     - For minikube: run 'minikube status'"
@@ -192,9 +228,12 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             echo "     - Ensure certificates are valid (not expired)"
             echo ""
             echo "  3. Check cluster accessibility from Jenkins node:"
-            echo "     - If using localhost (127.0.0.1), Jenkins must run on same machine"
-            echo "     - For remote clusters, verify firewall rules allow access"
-            echo "     - Test network connectivity: ping/telnet to cluster server"
+            SERVER_URL=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo "unknown")
+            echo "     - Current server URL: $SERVER_URL"
+            if [[ "$SERVER_URL" == *"127.0.0.1"* ]] || [[ "$SERVER_URL" == *"localhost"* ]]; then
+                echo "     - ⚠️  Using localhost - if Jenkins is in Docker, this won't work"
+                echo "     - Solution: Update kubeconfig to use host.docker.internal or host IP"
+            fi
             echo ""
             echo "  4. Current configuration:"
             kubectl config view --minify 2>&1 | head -20 || echo "Could not display config"
