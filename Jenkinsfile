@@ -97,6 +97,21 @@ pipeline {
                 }
             }
         }
+        // Stage 4.5: Start ELK stack locally via docker compose (Elasticsearch, Logstash, Kibana)
+        stage('Start ELK') {
+            steps {
+                echo 'Starting Elasticsearch, Logstash, Kibana via docker compose...'
+                sh '''
+                    set -e
+                    if command -v docker-compose >/dev/null 2>&1; then
+                      COMPOSE_CMD="docker-compose"
+                    else
+                      COMPOSE_CMD="docker compose"
+                    fi
+                    $COMPOSE_CMD -f docker-compose.yml up -d elasticsearch logstash kibana
+                '''
+            }
+        }
         // Stage 5: Deploy with Kubernetes
         // Purpose: Deploy the application using Kubernetes and Ansible
         // Key Actions:
