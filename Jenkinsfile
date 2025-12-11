@@ -430,9 +430,17 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                 echo 'Performing health checks...'
                 sh '''
                     NAMESPACE=${KUBERNETES_NAMESPACE}
-                    echo "Checking frontend health..."
-                    kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-                    curl -f http://disease-detector-frontend-service/health || exit 1
+//                     echo "Checking frontend health..."
+//                     kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
+//                     curl -f http://disease-detector-frontend-service/health || exit 1
+//
+
+                    FRONTEND_POD=$(kubectl get pods -n disease-detector -l app=disease-detector-frontend -o jsonpath="{.items[0].metadata.name}")
+
+                    echo "Checking frontend health using existing pod $FRONTEND_POD ..."
+
+                    kubectl exec -n disease-detector "$FRONTEND_POD" -- curl -f http://disease-detector-frontend-service/health || exit 1
+
 
                     echo "Waiting for backend to become healthy..."
                     ATTEMPTS=20   # 20 * 20s = 120 seconds
