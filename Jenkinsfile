@@ -338,8 +338,8 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         
                         # Check backend health
                         echo "Checking backend health..."
-                        ATTEMPTS=10
-                        SLEEP=10
+                        ATTEMPTS=20
+                        SLEEP=25
                         BACKEND_HEALTHY=false
                         
                         for i in $(seq 1 $ATTEMPTS); do
