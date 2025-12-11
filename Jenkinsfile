@@ -102,13 +102,16 @@ pipeline {
             steps {
                 echo 'Starting Elasticsearch, Logstash, Kibana via docker compose...'
                 sh '''
+
+
                     set -e
+                    export COMPOSE_PROJECT_NAME=${JOB_NAME:-disease-detector}
                     if command -v docker-compose >/dev/null 2>&1; then
                       COMPOSE_CMD="docker-compose"
                     else
                       COMPOSE_CMD="docker compose"
                     fi
-                    $COMPOSE_CMD -f docker-compose.yml up -d elasticsearch logstash kibana
+                    $COMPOSE_CMD -f docker-compose.yml up -d --remove-orphans elasticsearch logstash kibana
                 '''
             }
         }
