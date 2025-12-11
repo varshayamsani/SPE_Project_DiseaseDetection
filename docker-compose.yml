@@ -50,6 +50,7 @@ services:
     container_name: logstash
     volumes:
       - ./logstash/config/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logstash/templates:/usr/share/logstash/templates:ro
       - ./logs:/var/log/app:ro
     ports:
       - "5044:5044"
