@@ -28,6 +28,18 @@ pipeline {
         }
         
         // Stage 2: Build and Test
+//         stage('Build & Test') {
+//             steps {
+//                 echo 'Building and testing application...'
+//                 sh '''
+//                     python3 -m venv venv
+//                     source venv/bin/activate
+//                     pip install -r requirements.txt
+//                     python -m pytest tests/ || echo "No tests found, continuing..."
+//                 '''
+//             }
+//         }
+// Stage 2: Build and Test
         stage('Build & Test') {
             steps {
                 echo 'Building and testing application...'
@@ -35,10 +47,16 @@ pipeline {
                     python3 -m venv venv
                     source venv/bin/activate
                     pip install -r requirements.txt
+                    if [ -f requirements-dev.txt ]; then
+                      pip install -r requirements-dev.txt
+                    else
+                      pip install pytest
+                    fi
                     python -m pytest tests/ || echo "No tests found, continuing..."
                 '''
             }
         }
+
         
         // Stage 3: Build Docker Images (Backend and Frontend)
         stage('Docker Build') {
