@@ -270,121 +270,158 @@ pipeline {
 
 stage('Deploy with Kubernetes') {
   steps {
-    echo '=== Deploy with Kubernetes (auto-generate kubeconfig) ==='
+    echo '========================================'
+    echo 'Stage: Deploy with Kubernetes'
+    echo 'Purpose: Deploy application using Kubernetes and Ansible'
+    echo '========================================'
+
     script {
-      // Ensure ansible present
+      // Ensure ansible-playbook present
       sh '''
-        if ! command -v ansible-playbook &>/dev/null; then
-          pip3 install --user ansible || pip install --user ansible
-        fi
-      '''
-
-      // Generate a fresh kubeconfig in workspace and use it for the playbook
+if ! command -v ansible-playbook &>/dev/null; then
+  echo "Installing Ansible..."
+  pip3 install --user ansible || pip install --user ansible
+fi
+ansible-playbook --version || true
+'''
+      // Main deploy script: generate ephemeral kubeconfig and run ansible
       sh '''
-        set -euo pipefail
-        NS=disease-detector
-        SA=jenkins-sa
-        OUT="$(pwd)/jenkins-kubeconfig.yaml"
-        ADMIN_KUBECONFIG="${HOME}/.kube/config"
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
 
-        echo "Workspace: $(pwd)"
-        echo "Will create ephemeral kubeconfig: ${OUT}"
+WORKSPACE="$(pwd)"
+NS=disease-detector
+SA=jenkins-sa
+OUT="${WORKSPACE}/jenkins-kubeconfig.yaml"
+ADMIN_KUBECONFIG="${HOME}/.kube/config"
 
-        # Create SA/Role/RoleBinding (idempotent). Adjust Role rules if needed.
-        kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -n $NS -f - <<'YAML'
-        apiVersion: v1
-        kind: ServiceAccount
-        metadata:
-          name: jenkins-sa
-          namespace: disease-detector
-        YAML
+echo "Workspace: ${WORKSPACE}"
+echo "Will create ephemeral kubeconfig: ${OUT}"
+echo "Admin kubeconfig: ${ADMIN_KUBECONFIG}"
 
-        kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -n $NS -f - <<'YAML'
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: Role
-        metadata:
-          name: jenkins-sa-role
-          namespace: disease-detector
-        rules:
-        - apiGroups: ["", "apps", "autoscaling"]
-          resources: ["pods","services","deployments","replicasets","configmaps","secrets","horizontalpodautoscalers"]
-          verbs: ["get","list","watch","create","update","patch","delete"]
-        YAML
+# Create safe temp dir for YAML files
+TMPDIR="$(mktemp -d)"
+echo "Temp dir: ${TMPDIR}"
+set -x
 
-        kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -n $NS -f - <<'YAML'
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: RoleBinding
-        metadata:
-          name: jenkins-sa-binding
-          namespace: disease-detector
-        subjects:
-        - kind: ServiceAccount
-          name: jenkins-sa
-          namespace: disease-detector
-        roleRef:
-          kind: Role
-          name: jenkins-sa-role
-          apiGroup: rbac.authorization.k8s.io
-        YAML
+# 1) ServiceAccount YAML
+cat > "${TMPDIR}/sa.yaml" <<'YAML'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-sa
+  namespace: disease-detector
+YAML
 
-        # Create a token for the SA (requires TokenRequest support on server)
-        TOKEN=$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" create token ${SA} -n ${NS} 2>/dev/null || true)
+# 2) Role YAML (adjust resources/verbs if you need to restrict further)
+cat > "${TMPDIR}/role.yaml" <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-sa-role
+  namespace: disease-detector
+rules:
+- apiGroups: ["", "apps", "autoscaling", "networking.k8s.io"]
+  resources: ["pods","services","deployments","replicasets","configmaps","secrets","horizontalpodautoscalers","ingresses"]
+  verbs: ["get","list","watch","create","update","patch","delete"]
+YAML
 
-        if [ -z "${TOKEN}" ]; then
-          # fallback for older clusters: read the secret token
-          SECRET_NAME=$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" -n ${NS} get sa ${SA} -o jsonpath='{.secrets[0].name}')
-          TOKEN=$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" -n ${NS} get secret ${SECRET_NAME} -o jsonpath='{.data.token}' | base64 --decode)
-        fi
+# 3) RoleBinding YAML
+cat > "${TMPDIR}/rb.yaml" <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-sa-binding
+  namespace: disease-detector
+subjects:
+- kind: ServiceAccount
+  name: jenkins-sa
+  namespace: disease-detector
+roleRef:
+  kind: Role
+  name: jenkins-sa-role
+  apiGroup: rbac.authorization.k8s.io
+YAML
 
-        # Build kubeconfig using admin cluster info (server + CA)
-        CLUSTER_NAME=$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view -o jsonpath='{.clusters[0].name}')
-        SERVER=$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view -o jsonpath="{.clusters[?(@.name=='$CLUSTER_NAME')].cluster.server}")
-        CA_DATA=$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view --raw -o jsonpath="{.clusters[?(@.name=='$CLUSTER_NAME')].cluster['certificate-authority-data']}")
+# Apply them using the admin kubeconfig (idempotent)
+kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/sa.yaml" -n "${NS}"
+kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/role.yaml" -n "${NS}"
+kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/rb.yaml" -n "${NS}"
 
-        cat > "${OUT}" <<EOF
-        apiVersion: v1
-        kind: Config
-        clusters:
-        - name: jenkins-cluster
-          cluster:
-            server: ${SERVER}
-            certificate-authority-data: ${CA_DATA}
-        contexts:
-        - name: jenkins-context
-          context:
-            cluster: jenkins-cluster
-            namespace: ${NS}
-            user: jenkins-sa-user
-        current-context: jenkins-context
-        users:
-        - name: jenkins-sa-user
-          user:
-            token: ${TOKEN}
-        EOF
+# Create token for the SA (preferred)
+TOKEN="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" create token "${SA}" -n "${NS}" 2>/dev/null || true)"
 
-        chmod 600 "${OUT}"
-        echo "Generated kubeconfig: ${OUT}"
+if [ -z "${TOKEN}" ]; then
+  # Fallback for older clusters: read the secret token
+  SECRET_NAME="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" -n "${NS}" get sa "${SA}" -o jsonpath='{.secrets[0].name}' 2>/dev/null || true)"
+  if [ -n "${SECRET_NAME}" ]; then
+    TOKEN="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" -n "${NS}" get secret "${SECRET_NAME}" -o jsonpath='{.data.token}' | base64 --decode)"
+  else
+    echo "ERROR: could not obtain token for serviceaccount ${SA}"
+    exit 1
+  fi
+fi
 
-        # Preflight quick check
-        kubectl --kubeconfig="${OUT}" cluster-info --request-timeout=10s || true
-        kubectl --kubeconfig="${OUT}" get ns || true
+# Build kubeconfig using admin cluster info (server + CA)
+CLUSTER_NAME="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view -o jsonpath='{.clusters[0].name}')"
+SERVER="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view -o jsonpath="{.clusters[?(@.name=='${CLUSTER_NAME}')].cluster.server}")"
+CA_DATA="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view --raw -o jsonpath="{.clusters[?(@.name=='${CLUSTER_NAME}')].cluster['certificate-authority-data']}")"
 
-        # Run ansible using the generated kubeconfig (export so Ansible tasks inherit it)
-        export KUBECONFIG="${OUT}"
-        cd ansible
-        ansible-playbook -i inventory.yml playbook.yaml \
-          -e "kubeconfig_path=${OUT}" \
-          -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
-          -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
-          -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
-          -v
+if [ -z "${SERVER}" ] || [ -z "${CA_DATA}" ]; then
+  echo "ERROR: could not extract SERVER or CA from admin kubeconfig (${ADMIN_KUBECONFIG})"
+  exit 1
+fi
 
-        # (optional) cleanup kubeconfig after run
-        rm -f "${OUT}"
-      '''
+cat > "${OUT}" <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- name: jenkins-cluster
+  cluster:
+    server: ${SERVER}
+    certificate-authority-data: ${CA_DATA}
+contexts:
+- name: jenkins-context
+  context:
+    cluster: jenkins-cluster
+    namespace: ${NS}
+    user: jenkins-sa-user
+current-context: jenkins-context
+users:
+- name: jenkins-sa-user
+  user:
+    token: ${TOKEN}
+EOF
+
+chmod 600 "${OUT}"
+echo "Generated kubeconfig: ${OUT}"
+
+# Preflight checks
+export NO_PROXY="${NO_PROXY:-},127.0.0.1,localhost"
+export no_proxy="${no_proxy:-},127.0.0.1,localhost"
+kubectl --kubeconfig="${OUT}" cluster-info --request-timeout=10s || true
+kubectl --kubeconfig="${OUT}" -n "${NS}" get deployments || true
+
+# Run ansible-playbook with kubeconfig available
+export KUBECONFIG="${OUT}"
+cd ansible
+ansible-playbook -i inventory.yml playbook.yaml \
+  -e "kubeconfig_path=${OUT}" \
+  -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
+  -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
+  -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
+  -v
+
+# Optional cleanup: remove the ephemeral kubeconfig and temp files
+rm -f "${OUT}"
+rm -rf "${TMPDIR}"
+
+set +x
+'''
     }
   }
 }
+
 
 
 
