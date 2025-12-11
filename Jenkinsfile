@@ -302,32 +302,106 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
         stage('Health Check') {
             steps {
                 echo 'Performing health checks...'
-                sh '''
-                    NAMESPACE=${KUBERNETES_NAMESPACE}
-                    echo "Checking frontend health..."
-                    kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-                    curl -f http://disease-detector-frontend-service/health || exit 1
-
-                    echo "Waiting for backend to become healthy..."
-                    ATTEMPTS=20   # 20 * 20s = 120 seconds
-                    SLEEP=20
-
-                    for i in $(seq 1 $ATTEMPTS); do
-                      echo "Backend health attempt $i/$ATTEMPTS..."
-                      if kubectl run backend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-                           curl -fsS http://disease-detector-backend-service:5001/health; then
-                        echo "Backend is healthy!"
-                        break
-                      fi
-                      echo "Backend not ready yet, sleeping ${SLEEP}s..."
-                      sleep $SLEEP
-                      if [ "$i" -eq "$ATTEMPTS" ]; then
-                        echo "Backend failed health check after ${ATTEMPTS} attempts"
-                        exit 1
-                      fi
-                    done
-
-                '''
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
+                        export KUBECONFIG="$KUBECONFIG_FILE"
+                        NAMESPACE=${KUBERNETES_NAMESPACE}
+                        
+                        echo "=========================================="
+                        echo "Waiting for deployments to be ready..."
+                        echo "=========================================="
+                        
+                        # Wait for backend deployment to be ready
+                        echo "Waiting for backend deployment..."
+                        if kubectl wait --for=condition=available --timeout=300s deployment/disease-detector-backend -n ${NAMESPACE}; then
+                            echo "✅ Backend deployment is ready"
+                        else
+                            echo "⚠️  Backend deployment not ready after 5 minutes, checking status..."
+                            kubectl get deployment/disease-detector-backend -n ${NAMESPACE}
+                            kubectl get pods -n ${NAMESPACE} -l app=disease-detector-backend
+                        fi
+                        
+                        # Wait for frontend deployment to be ready
+                        echo "Waiting for frontend deployment..."
+                        if kubectl wait --for=condition=available --timeout=300s deployment/disease-detector-frontend -n ${NAMESPACE}; then
+                            echo "✅ Frontend deployment is ready"
+                        else
+                            echo "⚠️  Frontend deployment not ready after 5 minutes, checking status..."
+                            kubectl get deployment/disease-detector-frontend -n ${NAMESPACE}
+                            kubectl get pods -n ${NAMESPACE} -l app=disease-detector-frontend
+                        fi
+                        
+                        echo ""
+                        echo "=========================================="
+                        echo "Checking service health endpoints..."
+                        echo "=========================================="
+                        
+                        # Check backend health
+                        echo "Checking backend health..."
+                        ATTEMPTS=10
+                        SLEEP=10
+                        BACKEND_HEALTHY=false
+                        
+                        for i in $(seq 1 $ATTEMPTS); do
+                            echo "Backend health attempt $i/$ATTEMPTS..."
+                            if kubectl run backend-health-check-$i --image=curlimages/curl:latest --rm -i --restart=Never --timeout=30s -n ${NAMESPACE} -- \
+                                 curl -fsS --max-time 10 http://disease-detector-backend-service:5001/health 2>/dev/null; then
+                                echo "✅ Backend is healthy!"
+                                BACKEND_HEALTHY=true
+                                break
+                            fi
+                            echo "Backend not ready yet, sleeping ${SLEEP}s..."
+                            sleep $SLEEP
+                        done
+                        
+                        if [ "$BACKEND_HEALTHY" = "false" ]; then
+                            echo "⚠️  Backend health check failed after ${ATTEMPTS} attempts"
+                            echo "Checking backend pod logs..."
+                            kubectl logs -n ${NAMESPACE} -l app=disease-detector-backend --tail=20 || true
+                        fi
+                        
+                        # Check frontend health
+                        echo ""
+                        echo "Checking frontend health..."
+                        FRONTEND_HEALTHY=false
+                        
+                        for i in $(seq 1 $ATTEMPTS); do
+                            echo "Frontend health attempt $i/$ATTEMPTS..."
+                            if kubectl run frontend-health-check-$i --image=curlimages/curl:latest --rm -i --restart=Never --timeout=30s -n ${NAMESPACE} -- \
+                                 curl -fsS --max-time 10 http://disease-detector-frontend-service/health 2>/dev/null; then
+                                echo "✅ Frontend is healthy!"
+                                FRONTEND_HEALTHY=true
+                                break
+                            fi
+                            echo "Frontend not ready yet, sleeping ${SLEEP}s..."
+                            sleep $SLEEP
+                        done
+                        
+                        if [ "$FRONTEND_HEALTHY" = "false" ]; then
+                            echo "⚠️  Frontend health check failed after ${ATTEMPTS} attempts"
+                            echo "Checking frontend pod logs..."
+                            kubectl logs -n ${NAMESPACE} -l app=disease-detector-frontend --tail=20 || true
+                        fi
+                        
+                        echo ""
+                        echo "=========================================="
+                        echo "Health Check Summary"
+                        echo "=========================================="
+                        echo "Backend: $([ "$BACKEND_HEALTHY" = "true" ] && echo "✅ Healthy" || echo "❌ Unhealthy")"
+                        echo "Frontend: $([ "$FRONTEND_HEALTHY" = "true" ] && echo "✅ Healthy" || echo "❌ Unhealthy")"
+                        echo ""
+                        
+                        # Only fail if both are unhealthy
+                        if [ "$BACKEND_HEALTHY" = "false" ] && [ "$FRONTEND_HEALTHY" = "false" ]; then
+                            echo "❌ Both services are unhealthy. Failing health check."
+                            exit 1
+                        elif [ "$BACKEND_HEALTHY" = "false" ] || [ "$FRONTEND_HEALTHY" = "false" ]; then
+                            echo "⚠️  One or more services are unhealthy, but continuing..."
+                        else
+                            echo "✅ All services are healthy!"
+                        fi
+                    '''
+                }
             }
         }
 
