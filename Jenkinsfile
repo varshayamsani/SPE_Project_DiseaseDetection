@@ -192,63 +192,63 @@ pipeline {
 }
 
 
-//         stage('Deploy with Kubernetes') {
-//             steps {
-//                 echo '========================================'
-//                 echo 'Stage: Deploy with Kubernetes'
-//                 echo 'Purpose: Deploy application using Kubernetes and Ansible'
-//                 echo '========================================'
-//
-//                 script {
-//                     // Install Ansible if not available
-//                     sh '''
-//                         if ! command -v ansible-playbook &> /dev/null; then
-//                             echo "Installing Ansible..."
-//                             pip3 install ansible || pip install ansible
-//                         fi
-//                         ansible-playbook --version
-//                     '''
-//
-//
-//                     // Uses Jenkins Kubernetes plugin withKubeConfig
-// //                     withCredentials([file(credentialsId: 'kubeconfig', variable: 'KCFG')]) {
-// //                         sh """
-// //                             export KUBECONFIG=$KCFG
-// //                             kubectl get ns
-// //                         """
-// //                     }
-// withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
-//     echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
-//     sh """
-//         # Use the kubeconfig file from Jenkins secret
-//         export KUBECONFIG=${KUBECONFIG_FILE}
-//
-//         cd ansible
-//         ansible-playbook -i inventory.yml playbook.yaml \
-//             -e "kubeconfig_path=${KUBECONFIG_FILE}" \
-//             -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
-//             -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
-//             -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
-//             -v
-//     """
-// }
-//
-// //                     withKubeConfig([credentialsId: 'kubeconfig', serverUrl: '']) {
-// //                         // Run Ansible playbook (playbook.yaml) to deploy the application
-// //                         echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
-// //                         sh """
-// //                             cd ansible
-// //                             ansible-playbook -i inventory.yml playbook.yaml \
-// //                                 -e "kubeconfig_path=\${KUBECONFIG}" \
-// //                                 -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
-// //                                 -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
-// //                                 -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
-// //                                 -v
-// //                         """
-// //                     }
-//                 }
-//             }
-//         }
+        stage('Deploy with Kubernetes') {
+            steps {
+                echo '========================================'
+                echo 'Stage: Deploy with Kubernetes'
+                echo 'Purpose: Deploy application using Kubernetes and Ansible'
+                echo '========================================'
+
+                script {
+                    // Install Ansible if not available
+                    sh '''
+                        if ! command -v ansible-playbook &> /dev/null; then
+                            echo "Installing Ansible..."
+                            pip3 install ansible || pip install ansible
+                        fi
+                        ansible-playbook --version
+                    '''
+
+
+                    // Uses Jenkins Kubernetes plugin withKubeConfig
+//                     withCredentials([file(credentialsId: 'kubeconfig', variable: 'KCFG')]) {
+//                         sh """
+//                             export KUBECONFIG=$KCFG
+//                             kubectl get ns
+//                         """
+//                     }
+withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+    echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
+    sh """
+        # Use the kubeconfig file from Jenkins secret
+        export KUBECONFIG=${KUBECONFIG_FILE}
+
+        cd ansible
+        ansible-playbook -i inventory.yml playbook.yaml \
+            -e "kubeconfig_path=${KUBECONFIG_FILE}" \
+            -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
+            -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
+            -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
+            -v
+    """
+}
+
+//                     withKubeConfig([credentialsId: 'kubeconfig', serverUrl: '']) {
+//                         // Run Ansible playbook (playbook.yaml) to deploy the application
+//                         echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
+//                         sh """
+//                             cd ansible
+//                             ansible-playbook -i inventory.yml playbook.yaml \
+//                                 -e "kubeconfig_path=\${KUBECONFIG}" \
+//                                 -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
+//                                 -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
+//                                 -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
+//                                 -v
+//                         """
+//                     }
+                }
+            }
+        }
         
         // Stage 6: Health Check
 //         stage('Health Check') {
@@ -268,159 +268,159 @@ pipeline {
 //         }
 
 
-stage('Deploy with Kubernetes') {
-  steps {
-    echo '========================================'
-    echo 'Stage: Deploy with Kubernetes'
-    echo 'Purpose: Deploy application using Kubernetes and Ansible'
-    echo '========================================'
-
-    script {
-      // Ensure ansible-playbook present
-      sh '''
-if ! command -v ansible-playbook &>/dev/null; then
-  echo "Installing Ansible..."
-  pip3 install --user ansible || pip install --user ansible
-fi
-ansible-playbook --version || true
-'''
-      // Main deploy script: generate ephemeral kubeconfig and run ansible
-      sh '''
-set -euo pipefail
-export PATH="$HOME/.local/bin:$PATH"
-
-WORKSPACE="$(pwd)"
-NS=disease-detector
-SA=jenkins-sa
-OUT="${WORKSPACE}/jenkins-kubeconfig.yaml"
-ADMIN_KUBECONFIG="${HOME}/.kube/config"
-
-echo "Workspace: ${WORKSPACE}"
-echo "Will create ephemeral kubeconfig: ${OUT}"
-echo "Admin kubeconfig: ${ADMIN_KUBECONFIG}"
-
-# Create safe temp dir for YAML files
-TMPDIR="$(mktemp -d)"
-echo "Temp dir: ${TMPDIR}"
-set -x
-
-# 1) ServiceAccount YAML
-cat > "${TMPDIR}/sa.yaml" <<'YAML'
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: jenkins-sa
-  namespace: disease-detector
-YAML
-
-# 2) Role YAML (adjust resources/verbs if you need to restrict further)
-cat > "${TMPDIR}/role.yaml" <<'YAML'
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: jenkins-sa-role
-  namespace: disease-detector
-rules:
-- apiGroups: ["", "apps", "autoscaling", "networking.k8s.io"]
-  resources: ["pods","services","deployments","replicasets","configmaps","secrets","horizontalpodautoscalers","ingresses"]
-  verbs: ["get","list","watch","create","update","patch","delete"]
-YAML
-
-# 3) RoleBinding YAML
-cat > "${TMPDIR}/rb.yaml" <<'YAML'
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: jenkins-sa-binding
-  namespace: disease-detector
-subjects:
-- kind: ServiceAccount
-  name: jenkins-sa
-  namespace: disease-detector
-roleRef:
-  kind: Role
-  name: jenkins-sa-role
-  apiGroup: rbac.authorization.k8s.io
-YAML
-
-# Apply them using the admin kubeconfig (idempotent)
-kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/sa.yaml" -n "${NS}"
-kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/role.yaml" -n "${NS}"
-kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/rb.yaml" -n "${NS}"
-
-# Create token for the SA (preferred)
-TOKEN="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" create token "${SA}" -n "${NS}" 2>/dev/null || true)"
-
-if [ -z "${TOKEN}" ]; then
-  # Fallback for older clusters: read the secret token
-  SECRET_NAME="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" -n "${NS}" get sa "${SA}" -o jsonpath='{.secrets[0].name}' 2>/dev/null || true)"
-  if [ -n "${SECRET_NAME}" ]; then
-    TOKEN="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" -n "${NS}" get secret "${SECRET_NAME}" -o jsonpath='{.data.token}' | base64 --decode)"
-  else
-    echo "ERROR: could not obtain token for serviceaccount ${SA}"
-    exit 1
-  fi
-fi
-
-# Build kubeconfig using admin cluster info (server + CA)
-CLUSTER_NAME="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view -o jsonpath='{.clusters[0].name}')"
-SERVER="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view -o jsonpath="{.clusters[?(@.name=='${CLUSTER_NAME}')].cluster.server}")"
-CA_DATA="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view --raw -o jsonpath="{.clusters[?(@.name=='${CLUSTER_NAME}')].cluster['certificate-authority-data']}")"
-
-if [ -z "${SERVER}" ] || [ -z "${CA_DATA}" ]; then
-  echo "ERROR: could not extract SERVER or CA from admin kubeconfig (${ADMIN_KUBECONFIG})"
-  exit 1
-fi
-
-cat > "${OUT}" <<EOF
-apiVersion: v1
-kind: Config
-clusters:
-- name: jenkins-cluster
-  cluster:
-    server: ${SERVER}
-    certificate-authority-data: ${CA_DATA}
-contexts:
-- name: jenkins-context
-  context:
-    cluster: jenkins-cluster
-    namespace: ${NS}
-    user: jenkins-sa-user
-current-context: jenkins-context
-users:
-- name: jenkins-sa-user
-  user:
-    token: ${TOKEN}
-EOF
-
-chmod 600 "${OUT}"
-echo "Generated kubeconfig: ${OUT}"
-
-# Preflight checks
-export NO_PROXY="${NO_PROXY:-},127.0.0.1,localhost"
-export no_proxy="${no_proxy:-},127.0.0.1,localhost"
-kubectl --kubeconfig="${OUT}" cluster-info --request-timeout=10s || true
-kubectl --kubeconfig="${OUT}" -n "${NS}" get deployments || true
-
-# Run ansible-playbook with kubeconfig available
-export KUBECONFIG="${OUT}"
-cd ansible
-ansible-playbook -i inventory.yml playbook.yaml \
-  -e "kubeconfig_path=${OUT}" \
-  -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
-  -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
-  -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
-  -v
-
-# Optional cleanup: remove the ephemeral kubeconfig and temp files
-rm -f "${OUT}"
-rm -rf "${TMPDIR}"
-
-set +x
-'''
-    }
-  }
-}
+// stage('Deploy with Kubernetes') {
+//   steps {
+//     echo '========================================'
+//     echo 'Stage: Deploy with Kubernetes'
+//     echo 'Purpose: Deploy application using Kubernetes and Ansible'
+//     echo '========================================'
+//
+//     script {
+//       // Ensure ansible-playbook present
+//       sh '''
+// if ! command -v ansible-playbook &>/dev/null; then
+//   echo "Installing Ansible..."
+//   pip3 install --user ansible || pip install --user ansible
+// fi
+// ansible-playbook --version || true
+// '''
+//       // Main deploy script: generate ephemeral kubeconfig and run ansible
+//       sh '''
+// set -euo pipefail
+// export PATH="$HOME/.local/bin:$PATH"
+//
+// WORKSPACE="$(pwd)"
+// NS=disease-detector
+// SA=jenkins-sa
+// OUT="${WORKSPACE}/jenkins-kubeconfig.yaml"
+// ADMIN_KUBECONFIG="${HOME}/.kube/config"
+//
+// echo "Workspace: ${WORKSPACE}"
+// echo "Will create ephemeral kubeconfig: ${OUT}"
+// echo "Admin kubeconfig: ${ADMIN_KUBECONFIG}"
+//
+// # Create safe temp dir for YAML files
+// TMPDIR="$(mktemp -d)"
+// echo "Temp dir: ${TMPDIR}"
+// set -x
+//
+// # 1) ServiceAccount YAML
+// cat > "${TMPDIR}/sa.yaml" <<'YAML'
+// apiVersion: v1
+// kind: ServiceAccount
+// metadata:
+//   name: jenkins-sa
+//   namespace: disease-detector
+// YAML
+//
+// # 2) Role YAML (adjust resources/verbs if you need to restrict further)
+// cat > "${TMPDIR}/role.yaml" <<'YAML'
+// apiVersion: rbac.authorization.k8s.io/v1
+// kind: Role
+// metadata:
+//   name: jenkins-sa-role
+//   namespace: disease-detector
+// rules:
+// - apiGroups: ["", "apps", "autoscaling", "networking.k8s.io"]
+//   resources: ["pods","services","deployments","replicasets","configmaps","secrets","horizontalpodautoscalers","ingresses"]
+//   verbs: ["get","list","watch","create","update","patch","delete"]
+// YAML
+//
+// # 3) RoleBinding YAML
+// cat > "${TMPDIR}/rb.yaml" <<'YAML'
+// apiVersion: rbac.authorization.k8s.io/v1
+// kind: RoleBinding
+// metadata:
+//   name: jenkins-sa-binding
+//   namespace: disease-detector
+// subjects:
+// - kind: ServiceAccount
+//   name: jenkins-sa
+//   namespace: disease-detector
+// roleRef:
+//   kind: Role
+//   name: jenkins-sa-role
+//   apiGroup: rbac.authorization.k8s.io
+// YAML
+//
+// # Apply them using the admin kubeconfig (idempotent)
+// kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/sa.yaml" -n "${NS}"
+// kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/role.yaml" -n "${NS}"
+// kubectl --kubeconfig="${ADMIN_KUBECONFIG}" apply -f "${TMPDIR}/rb.yaml" -n "${NS}"
+//
+// # Create token for the SA (preferred)
+// TOKEN="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" create token "${SA}" -n "${NS}" 2>/dev/null || true)"
+//
+// if [ -z "${TOKEN}" ]; then
+//   # Fallback for older clusters: read the secret token
+//   SECRET_NAME="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" -n "${NS}" get sa "${SA}" -o jsonpath='{.secrets[0].name}' 2>/dev/null || true)"
+//   if [ -n "${SECRET_NAME}" ]; then
+//     TOKEN="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" -n "${NS}" get secret "${SECRET_NAME}" -o jsonpath='{.data.token}' | base64 --decode)"
+//   else
+//     echo "ERROR: could not obtain token for serviceaccount ${SA}"
+//     exit 1
+//   fi
+// fi
+//
+// # Build kubeconfig using admin cluster info (server + CA)
+// CLUSTER_NAME="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view -o jsonpath='{.clusters[0].name}')"
+// SERVER="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view -o jsonpath="{.clusters[?(@.name=='${CLUSTER_NAME}')].cluster.server}")"
+// CA_DATA="$(kubectl --kubeconfig="${ADMIN_KUBECONFIG}" config view --raw -o jsonpath="{.clusters[?(@.name=='${CLUSTER_NAME}')].cluster['certificate-authority-data']}")"
+//
+// if [ -z "${SERVER}" ] || [ -z "${CA_DATA}" ]; then
+//   echo "ERROR: could not extract SERVER or CA from admin kubeconfig (${ADMIN_KUBECONFIG})"
+//   exit 1
+// fi
+//
+// cat > "${OUT}" <<EOF
+// apiVersion: v1
+// kind: Config
+// clusters:
+// - name: jenkins-cluster
+//   cluster:
+//     server: ${SERVER}
+//     certificate-authority-data: ${CA_DATA}
+// contexts:
+// - name: jenkins-context
+//   context:
+//     cluster: jenkins-cluster
+//     namespace: ${NS}
+//     user: jenkins-sa-user
+// current-context: jenkins-context
+// users:
+// - name: jenkins-sa-user
+//   user:
+//     token: ${TOKEN}
+// EOF
+//
+// chmod 600 "${OUT}"
+// echo "Generated kubeconfig: ${OUT}"
+//
+// # Preflight checks
+// export NO_PROXY="${NO_PROXY:-},127.0.0.1,localhost"
+// export no_proxy="${no_proxy:-},127.0.0.1,localhost"
+// kubectl --kubeconfig="${OUT}" cluster-info --request-timeout=10s || true
+// kubectl --kubeconfig="${OUT}" -n "${NS}" get deployments || true
+//
+// # Run ansible-playbook with kubeconfig available
+// export KUBECONFIG="${OUT}"
+// cd ansible
+// ansible-playbook -i inventory.yml playbook.yaml \
+//   -e "kubeconfig_path=${OUT}" \
+//   -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
+//   -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
+//   -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
+//   -v
+//
+// # Optional cleanup: remove the ephemeral kubeconfig and temp files
+// rm -f "${OUT}"
+// rm -rf "${TMPDIR}"
+//
+// set +x
+// '''
+//     }
+//   }
+// }
 
 
 
