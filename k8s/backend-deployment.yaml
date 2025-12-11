@@ -47,13 +47,19 @@ spec:
 #          limits:
 #            memory: "2Gi"
 #            cpu: "1000m"
-            resources:
-              limits:
-                cpu: "2"
-                memory: "6Gi"     # or 4Gi if your laptop is tight
-              requests:
-                cpu: "2000m"
-                memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+#            resources:
+#              limits:
+#                cpu: "2"
+#                memory: "6Gi"     # or 4Gi if your laptop is tight
+#              requests:
+#                cpu: "2000m"
+#                memory: "2Gi"
 
         #        livenessProbe:
 #          httpGet:
