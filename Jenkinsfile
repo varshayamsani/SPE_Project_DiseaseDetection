@@ -432,13 +432,13 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                     NAMESPACE=${KUBERNETES_NAMESPACE}
                     echo "Checking frontend health..."
 
-                    kubectl delete pod frontend-health -n disease-detector --ignore-not-found=true
-                    kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n disease-detector -- curl -f http://disease-detector-frontend-service/health
+                  //  kubectl delete pod frontend-health -n disease-detector --ignore-not-found=true
+                  //  kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n disease-detector -- curl -f http://disease-detector-frontend-service/health
 
 
-//
-//                     kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-//                     curl -f http://disease-detector-frontend-service/health || exit 1
+
+                    kubectl run frontend-health --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
+                    curl -f http://disease-detector-frontend-service/health || exit 1
 
 
 
