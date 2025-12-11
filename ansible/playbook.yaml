@@ -24,29 +24,82 @@
     - name: Display kubectl version
       debug:
         msg: "{{ kubectl_version.stdout }}"
+    
+    - name: Verify Kubernetes cluster connectivity
+      shell: |
+        {% if kubeconfig_path %}
+        export KUBECONFIG={{ kubeconfig_path }}
+        {% endif %}
+        kubectl cluster-info --request-timeout=15s
+      register: cluster_info
+      retries: 3
+      delay: 5
+      until: cluster_info.rc == 0
+      failed_when: false
+      changed_when: false
+      
+    - name: Fail if cluster is not accessible
+      fail:
+        msg: |
+          ============================================
+          ERROR: Cannot connect to Kubernetes cluster!
+          ============================================
+          Please verify:
+          1. The cluster is running and accessible
+          2. The kubeconfig file is valid
+          3. Network connectivity to the cluster
+          ============================================
+      when: cluster_info.rc != 0
         
     - name: Apply Kubernetes deployment YAML files
       shell: |
         {% if kubeconfig_path %}
         export KUBECONFIG={{ kubeconfig_path }}
         {% endif %}
-        kubectl apply -f {{ playbook_dir }}/../k8s/namespace.yaml --validate=false
-        kubectl apply -f {{ playbook_dir }}/../k8s/pvc.yaml --validate=false
-        kubectl apply -f {{ playbook_dir }}/../k8s/configmap.yaml -n {{ kubernetes_namespace }} --validate=false
-        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-nginx-configmap.yaml -n {{ kubernetes_namespace }} --validate=false
-        kubectl apply -f {{ playbook_dir }}/../k8s/backend-service.yaml -n {{ kubernetes_namespace }} --validate=false
-        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-service.yaml -n {{ kubernetes_namespace }} --validate=false
-        kubectl apply -f {{ playbook_dir }}/../k8s/backend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false
-        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false
-        kubectl set image deployment/disease-detector-backend backend={{ docker_image_backend }} -n {{ kubernetes_namespace }} || \
-        kubectl apply -f {{ playbook_dir }}/../k8s/backend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false
-        kubectl set image deployment/disease-detector-frontend frontend={{ docker_image_frontend }} -n {{ kubernetes_namespace }} || \
-        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false
-        kubectl rollout restart deployment/disease-detector-backend -n {{ kubernetes_namespace }}
-        kubectl rollout restart deployment/disease-detector-frontend -n {{ kubernetes_namespace }}
+        set -e
+        KUBECTL_TIMEOUT="--request-timeout=30s"
+        
+        # Apply namespace
+        kubectl apply -f {{ playbook_dir }}/../k8s/namespace.yaml --validate=false $KUBECTL_TIMEOUT || exit 1
+        
+        # Apply PVC
+        kubectl apply -f {{ playbook_dir }}/../k8s/pvc.yaml --validate=false $KUBECTL_TIMEOUT || exit 1
+        
+        # Apply ConfigMaps
+        kubectl apply -f {{ playbook_dir }}/../k8s/configmap.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT || exit 1
+        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-nginx-configmap.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT || exit 1
+        
+        # Apply Services
+        kubectl apply -f {{ playbook_dir }}/../k8s/backend-service.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT || exit 1
+        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-service.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT || exit 1
+        
+        # Apply HPAs
+        kubectl apply -f {{ playbook_dir }}/../k8s/backend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT || exit 1
+        kubectl apply -f {{ playbook_dir }}/../k8s/frontend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT || exit 1
+        
+        # Update or create deployments
+        if kubectl get deployment/disease-detector-backend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT &>/dev/null; then
+          kubectl set image deployment/disease-detector-backend backend={{ docker_image_backend }} -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT || exit 1
+        else
+          kubectl apply -f {{ playbook_dir }}/../k8s/backend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT || exit 1
+        fi
+        
+        if kubectl get deployment/disease-detector-frontend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT &>/dev/null; then
+          kubectl set image deployment/disease-detector-frontend frontend={{ docker_image_frontend }} -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT || exit 1
+        else
+          kubectl apply -f {{ playbook_dir }}/../k8s/frontend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT || exit 1
+        fi
+        
+        # Restart deployments
+        kubectl rollout restart deployment/disease-detector-backend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT || exit 1
+        kubectl rollout restart deployment/disease-detector-frontend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT || exit 1
       args:
         chdir: "{{ playbook_dir }}/.."
       register: apply_result
+      retries: 2
+      delay: 10
+      until: apply_result.rc == 0
+      failed_when: apply_result.rc != 0
       
     - name: Display apply results
       debug:
@@ -57,8 +110,11 @@
         {% if kubeconfig_path %}
         export KUBECONFIG={{ kubeconfig_path }}
         {% endif %}
-        kubectl get deployments -n {{ kubernetes_namespace }}
+        kubectl get deployments -n {{ kubernetes_namespace }} --request-timeout=15s
       register: kubectl_deployments
+      retries: 3
+      delay: 5
+      until: kubectl_deployments.rc == 0
       failed_when: kubectl_deployments.rc != 0
       changed_when: false
       
