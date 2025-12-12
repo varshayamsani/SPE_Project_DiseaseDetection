@@ -262,6 +262,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             -e "docker_image_backend=$DOCKER_IMAGE_BACKEND_FULL" \
             -e "docker_image_frontend=$DOCKER_IMAGE_FRONTEND_FULL" \
             -e "kubernetes_namespace=$KUBERNETES_NAMESPACE" \
+            -e "elk_enabled=${DEPLOY_ELK:-true}" \
             -v
     '''
 }
