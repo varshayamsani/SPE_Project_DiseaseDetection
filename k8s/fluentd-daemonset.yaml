@@ -9,28 +9,42 @@ data:
       @type tail
       path /var/log/containers/*disease-detector*.log
       pos_file /var/log/fluentd-containers.log.pos
-      tag disease-detector
-      format json
+      tag disease-detector.*
       read_from_head true
+      <parse>
+        @type json
+        time_key time
+        time_format %Y-%m-%dT%H:%M:%S.%NZ
+        keep_time_key true
+      </parse>
     </source>
 
-    <filter disease-detector>
+    <filter disease-detector.**>
       @type record_transformer
       <record>
-        hostname ${hostname}
-        timestamp ${time}
+        # Extract the actual log message from Kubernetes JSON format
+        message ${record["log"]}
+        stream ${record["stream"]}
+        log_source "disease-detector"
       </record>
     </filter>
 
-    <match disease-detector>
+    <match disease-detector.**>
       @type elasticsearch
       host elasticsearch.disease-detector.svc.cluster.local
       port 9200
-      index_name disease-detector-logs
-      type_name _doc
       logstash_format true
+      logstash_prefix disease-detector-logs
       logstash_dateformat %Y.%m.%d
+      type_name _doc
       flush_interval 10s
+      <buffer>
+        flush_interval 10s
+        retry_type exponential_backoff
+        retry_wait 1s
+        retry_max_interval 60s
+        retry_timeout 60m
+      </buffer>
     </match>
 ---
 apiVersion: apps/v1
@@ -49,6 +63,7 @@ spec:
       labels:
         app: fluentd
     spec:
+      serviceAccountName: fluentd
       containers:
         - name: fluentd
           image: fluent/fluentd-kubernetes-daemonset:v1-debian-elasticsearch
@@ -82,4 +97,5 @@ spec:
         - name: fluentd-config
           configMap:
             name: fluentd-config
+
 

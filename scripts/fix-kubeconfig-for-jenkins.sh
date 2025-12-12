@@ -126,3 +126,4 @@ echo "   - Is minikube running? Run 'minikube status'"
 echo ""
 
 
+

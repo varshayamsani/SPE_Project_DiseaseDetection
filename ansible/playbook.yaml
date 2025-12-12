@@ -104,6 +104,7 @@
         {% if elk_enabled | default(false) %}
         echo "Deploying lightweight ELK stack..."
         retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/elasticsearch-deployment.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
+        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/fluentd-rbac.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
         retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/fluentd-daemonset.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
         retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/kibana-deployment.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
         {% endif %}
