@@ -80,7 +80,7 @@ echo ""
 # Create token with longer timeout
 echo "3. Creating service account token..."
 echo "   (This may take up to 30 seconds...)"
-TOKEN=$(kubectl create token "$SERVICE_ACCOUNT" -n "$NAMESPACE" --duration=8760h --request-timeout=30s 2>&1)
+TOKEN=$(kubectl create token "$SERVICE_ACCOUNT" -n "$NAMESPACE" --duration=87600h --request-timeout=60s 2>&1)
 if [ $? -ne 0 ]; then
     echo "   ❌ Failed to create token"
     echo "   Error: $TOKEN"

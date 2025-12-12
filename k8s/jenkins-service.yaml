@@ -21,7 +21,7 @@ metadata:
     component: ci-cd
 rules:
   - apiGroups: [""]
-    resources: ["namespaces", "pods", "services", "configmaps", "persistentvolumeclaims"]
+    resources: ["namespaces", "pods", "pods/log", "services", "configmaps", "persistentvolumeclaims"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets"]
