@@ -13,6 +13,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import socket
 import sys
+import threading
 
 app = Flask(__name__)
 # Configure CORS to allow frontend service
@@ -187,9 +188,13 @@ def init_db():
         conn.commit()
     print("Database initialized successfully!")
 
+# Global flag to track if models are loaded
+_models_loaded = False
+_models_loading_lock = threading.Lock()
+
 def load_models():
     """Load multiple models for ensemble prediction"""
-    global MODELS_CONFIG, FALLBACK_MODELS
+    global MODELS_CONFIG, FALLBACK_MODELS, _models_loaded
     loaded_models = []
     
     print("Loading ensemble of medical models for improved accuracy...")
@@ -236,7 +241,23 @@ def load_models():
     else:
         print("\n⚠ No models loaded. Using fallback symptom matching only.")
     
+    _models_loaded = True
     return loaded_models
+
+def ensure_models_loaded():
+    """Lazy loading: Load models only when first needed (thread-safe)"""
+    global _models_loaded
+    
+    if _models_loaded:
+        return  # Models already loaded
+    
+    with _models_loading_lock:
+        # Double-check after acquiring lock (in case another thread loaded them)
+        if _models_loaded:
+            return
+        
+        logger.info("Models not loaded yet, loading now (lazy loading)...")
+        load_models()
 
 def get_loaded_models():
     """Get list of successfully loaded models"""
@@ -321,6 +342,9 @@ def get_patient_history(patient_id):
 
 def predict_disease_ml(symptoms_text, patient_history=None):
     """Ensemble ML-based prediction using multiple models with optional patient history"""
+    # Lazy loading: Load models only when first prediction is requested
+    ensure_models_loaded()
+    
     loaded_models = get_loaded_models()
     
     if not loaded_models:
@@ -676,12 +700,14 @@ def clear_patient_history(patient_id):
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
+    # Don't trigger model loading for health checks - just check if they're loaded
     loaded_models = get_loaded_models()
     return jsonify({
         'status': 'healthy',
         'models_loaded': len(loaded_models),
-        'model_names': [m['name'] for m in loaded_models],
-        'ensemble_mode': len(loaded_models) > 1
+        'model_names': [m['name'] for m in loaded_models] if loaded_models else [],
+        'ensemble_mode': len(loaded_models) > 1,
+        'lazy_loading': not _models_loaded  # Indicate if models haven't loaded yet
     })
 
 @app.route('/metrics', methods=['GET'])
@@ -793,9 +819,10 @@ if __name__ == '__main__':
     init_db()
     logger.info("Database initialized")
     
-    # Load ML models
-    load_models()
-    logger.info("Models loaded, starting application")
+    # NOTE: Models will be loaded lazily on first prediction request
+    # This allows the app to start quickly and become ready faster
+    # Models will load automatically when /predict endpoint is first called
+    logger.info("Application ready (models will load on first prediction request)")
     
     # Run application
     app.run(debug=False, host='0.0.0.0', port=5001)
