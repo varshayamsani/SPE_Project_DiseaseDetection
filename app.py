@@ -1284,6 +1284,7 @@ def dashboard():
     return render_template('dashboard.html')
 
 @app.route('/predict', methods=['POST'])
+@app.route('/api/predict', methods=['POST'])
 def predict():
     """API endpoint for disease prediction with patient history support"""
     import time
@@ -1395,6 +1396,7 @@ def predict():
         }), 500
 
 @app.route('/patient/register', methods=['POST'])
+@app.route('/api/patient/register', methods=['POST'])
 def register_patient():
     """Register a new patient"""
     try:

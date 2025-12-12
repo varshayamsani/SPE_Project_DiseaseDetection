@@ -238,7 +238,20 @@ predictBtn.addEventListener('click', async () => {
             body: JSON.stringify(requestBody)
         });
         
-        const data = await response.json();
+        // Check content type before parsing
+        const contentType = response.headers.get("content-type");
+        let data;
+        
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            data = await response.json();
+        } else {
+            // Non-JSON response (likely HTML error page like 504 Gateway Timeout)
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(`Server Error: ${response.status} ${response.statusText}`);
+            }
+            throw new Error('Received invalid response from server');
+        }
         
         if (!response.ok) {
             throw new Error(data.error || 'An error occurred');
