@@ -48,11 +48,11 @@ spec:
 #            memory: "2Gi"
 #            cpu: "1000m"
           requests:
-            cpu: "2"
-            memory: "3Gi"
-          limits:
             cpu: "2000m"
             memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "6Gi"
 #            resources:
 #              limits:
 #                cpu: "2"
