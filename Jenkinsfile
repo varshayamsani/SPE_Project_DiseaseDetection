@@ -262,7 +262,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             -e "docker_image_backend=$DOCKER_IMAGE_BACKEND_FULL" \
             -e "docker_image_frontend=$DOCKER_IMAGE_FRONTEND_FULL" \
             -e "kubernetes_namespace=$KUBERNETES_NAMESPACE" \
-            -e "elk_enabled=${DEPLOY_ELK:-true}" \
+            -e "elk_enabled=false" \
             -v
     '''
 }
@@ -284,7 +284,97 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             }
         }
         
-        // Stage 6: Health Check
+        // Stage 6: Deploy ELK Stack (Optional)
+        stage('Deploy ELK Stack') {
+            when {
+                expression { 
+                    return env.DEPLOY_ELK == null || env.DEPLOY_ELK == 'true' || env.DEPLOY_ELK == ''
+                }
+            }
+            steps {
+                echo '========================================'
+                echo 'Stage: Deploy ELK Stack'
+                echo 'Purpose: Deploy Elasticsearch, Fluentd, and Kibana for log aggregation'
+                echo '========================================'
+                
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
+                        export KUBECONFIG="$KUBECONFIG_FILE"
+                        NAMESPACE=${KUBERNETES_NAMESPACE}
+                        
+                        echo "Deploying lightweight ELK stack..."
+                        echo ""
+                        
+                        # Deploy Elasticsearch
+                        echo "📦 Deploying Elasticsearch..."
+                        kubectl apply -f k8s/elasticsearch-deployment.yaml -n ${NAMESPACE} --request-timeout=60s || {
+                            echo "⚠️  Elasticsearch deployment failed or already exists"
+                        }
+                        
+                        # Deploy Fluentd RBAC (if file exists)
+                        if [ -f "k8s/fluentd-rbac.yaml" ]; then
+                            echo "📦 Deploying Fluentd RBAC..."
+                            kubectl apply -f k8s/fluentd-rbac.yaml -n ${NAMESPACE} --request-timeout=60s || {
+                                echo "⚠️  Fluentd RBAC deployment failed or already exists"
+                            }
+                        else
+                            echo "ℹ️  fluentd-rbac.yaml not found, skipping (RBAC may already be applied)"
+                        fi
+                        
+                        # Deploy Fluentd DaemonSet
+                        echo "📦 Deploying Fluentd DaemonSet..."
+                        kubectl apply -f k8s/fluentd-daemonset.yaml -n ${NAMESPACE} --request-timeout=60s || {
+                            echo "❌ Fluentd deployment failed"
+                            exit 1
+                        }
+                        
+                        # Deploy Kibana
+                        echo "📦 Deploying Kibana..."
+                        kubectl apply -f k8s/kibana-deployment.yaml -n ${NAMESPACE} --request-timeout=60s || {
+                            echo "❌ Kibana deployment failed"
+                            exit 1
+                        }
+                        
+                        echo ""
+                        echo "✅ ELK stack deployment initiated"
+                        echo ""
+                        echo "Waiting for ELK components to be ready..."
+                        echo "This may take a few minutes..."
+                        
+                        # Wait for Elasticsearch
+                        echo "Waiting for Elasticsearch..."
+                        kubectl wait --for=condition=available --timeout=300s deployment/elasticsearch -n ${NAMESPACE} || {
+                            echo "⚠️  Elasticsearch not ready after 5 minutes, but continuing..."
+                        }
+                        
+                        # Wait for Kibana
+                        echo "Waiting for Kibana..."
+                        kubectl wait --for=condition=available --timeout=300s deployment/kibana -n ${NAMESPACE} || {
+                            echo "⚠️  Kibana not ready after 5 minutes, but continuing..."
+                        }
+                        
+                        # Check Fluentd DaemonSet
+                        echo "Checking Fluentd DaemonSet..."
+                        kubectl get daemonset/fluentd -n ${NAMESPACE} || {
+                            echo "⚠️  Fluentd DaemonSet not found"
+                        }
+                        
+                        echo ""
+                        echo "=========================================="
+                        echo "ELK Stack Deployment Summary"
+                        echo "=========================================="
+                        kubectl get pods -n ${NAMESPACE} -l 'app in (elasticsearch,kibana,fluentd)' || true
+                        echo ""
+                        echo "To access Kibana:"
+                        echo "  kubectl port-forward -n ${NAMESPACE} svc/kibana 5601:5601"
+                        echo "  Then open http://localhost:5601"
+                        echo "=========================================="
+                    '''
+                }
+            }
+        }
+        
+        // Stage 7: Health Check
 //         stage('Health Check') {
 //             steps {
 //                 echo 'Performing health checks...'
