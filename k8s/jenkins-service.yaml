@@ -21,10 +21,10 @@ metadata:
     component: ci-cd
 rules:
   - apiGroups: [""]
-    resources: ["namespaces", "pods", "pods/log", "services", "configmaps", "persistentvolumeclaims"]
+    resources: ["namespaces", "pods", "pods/log", "services", "configmaps", "persistentvolumeclaims", "nodes", "nodes/proxy"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
+    resources: ["deployments", "replicasets", "daemonsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
