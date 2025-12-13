@@ -249,10 +249,10 @@
     # - Deploys ELK Stack with Docker Compose
     # - Waits for services to be ready
     # Only runs if elk_enabled is true
-    - role: elk
-      vars:
-        app_name: disease-detector
-        elk_deploy: false
-      when: elk_enabled
+#    - role: elk
+#      vars:
+#        app_name: disease-detector
+#        elk_deploy: false
+#      when: elk_enabled
 
 
