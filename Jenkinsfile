@@ -207,16 +207,17 @@ pipeline {
                         fi
                         ansible-playbook --version
                     '''
+                }
 
-withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
-    echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
-    // Store non-secret values in environment variables to avoid Groovy interpolation of secrets
-    script {
-        env.DOCKER_IMAGE_BACKEND_FULL = "${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}"
-        env.DOCKER_IMAGE_FRONTEND_FULL = "${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}"
-    }
-    // Use single quotes to prevent Groovy string interpolation of secrets
-    sh '''
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                    echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
+                    // Store non-secret values in environment variables to avoid Groovy string interpolation of secrets
+                    script {
+                        env.DOCKER_IMAGE_BACKEND_FULL = "${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}"
+                        env.DOCKER_IMAGE_FRONTEND_FULL = "${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}"
+                    }
+                    // Use single quotes to prevent Groovy string interpolation of secrets
+                    sh '''
         # Use the kubeconfig file from Jenkins secret (not interpolated by Groovy)
         export KUBECONFIG="$KUBECONFIG_FILE"
         
@@ -343,10 +344,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             -e "kubernetes_namespace=$KUBERNETES_NAMESPACE" \
             -e "elk_enabled=false" \
             -v
-    '''
-}
-
-                    }
+                    '''
                 }
             }
         }
@@ -441,12 +439,11 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             }
         }
         
-        }
         stage('Health Check') {
             steps {
                 echo 'Performing health checks...'
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
-                sh '''
+                    sh '''
                         export KUBECONFIG="$KUBECONFIG_FILE"
                     NAMESPACE=${KUBERNETES_NAMESPACE}
                         
