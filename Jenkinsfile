@@ -139,8 +139,10 @@ pipeline {
                         echo "Configuring Vault from within cluster..."
                         echo ""
                         
-                        # Delete any existing setup job
-                        kubectl delete job vault-setup -n ${NAMESPACE} --ignore-not-found=true
+                        # Delete any existing setup job (non-fatal if permission denied)
+                        kubectl delete job vault-setup -n ${NAMESPACE} --ignore-not-found=true 2>/dev/null || {
+                            echo "ℹ️  Could not delete existing job (may not exist or permission denied, continuing...)"
+                        }
                         
                         # Create and run Vault setup job
                         echo "Creating Vault setup job..."
@@ -166,9 +168,11 @@ pipeline {
                             echo "   Continuing anyway - backend init container will configure secrets if needed"
                         fi
                         
-                        # Clean up job
+                        # Clean up job (non-fatal if permission denied)
                         echo "Cleaning up setup job..."
-                        kubectl delete job vault-setup -n ${NAMESPACE} --ignore-not-found=true
+                        kubectl delete job vault-setup -n ${NAMESPACE} --ignore-not-found=true 2>/dev/null || {
+                            echo "ℹ️  Could not delete job (permission denied, will auto-cleanup after TTL)"
+                        }
                         
                         echo ""
                         echo "=========================================="
