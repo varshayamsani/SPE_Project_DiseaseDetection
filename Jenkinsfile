@@ -226,7 +226,7 @@ pipeline {
                             
                             if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
                                 echo "  ✅ KV secrets engine enabled"
-                            elif echo "$RESPONSE_BODY" | grep -qi "path is already in use\|already mounted"; then
+                            elif echo "$RESPONSE_BODY" | grep -qiE "(path is already in use|already mounted)"; then
                                 echo "  ℹ️  KV secrets engine already enabled"
                             else
                                 echo "  ⚠️  Failed to enable KV secrets engine (HTTP $HTTP_CODE)"
@@ -494,7 +494,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             echo "⚠️  Warning: Could not retrieve nodes, but cluster-info succeeded"
         fi
         echo ""
-        
+
         cd ansible
         ansible-playbook -i inventory.yml playbook.yaml \
             -e "kubeconfig_path=$KUBECONFIG_FILE" \
@@ -633,9 +633,9 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             steps {
                 echo 'Performing health checks...'
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
-                    sh '''
+                sh '''
                         export KUBECONFIG="$KUBECONFIG_FILE"
-                        NAMESPACE=${KUBERNETES_NAMESPACE}
+                    NAMESPACE=${KUBERNETES_NAMESPACE}
                         
                         echo "=========================================="
                         echo "Waiting for deployments to be ready..."
@@ -671,17 +671,17 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         ATTEMPTS=20
                         SLEEP=25
                         BACKEND_HEALTHY=false
-                        
-                        for i in $(seq 1 $ATTEMPTS); do
-                            echo "Backend health attempt $i/$ATTEMPTS..."
+
+                    for i in $(seq 1 $ATTEMPTS); do
+                      echo "Backend health attempt $i/$ATTEMPTS..."
                             if kubectl run backend-health-check-$i --image=curlimages/curl:latest --rm -i --restart=Never --timeout=30s -n ${NAMESPACE} -- \
                                  curl -fsS --max-time 10 http://disease-detector-backend-service:5001/health 2>/dev/null; then
                                 echo "✅ Backend is healthy!"
                                 BACKEND_HEALTHY=true
-                                break
-                            fi
-                            echo "Backend not ready yet, sleeping ${SLEEP}s..."
-                            sleep $SLEEP
+                        break
+                      fi
+                      echo "Backend not ready yet, sleeping ${SLEEP}s..."
+                      sleep $SLEEP
                         done
                         
                         if [ "$BACKEND_HEALTHY" = "false" ]; then
