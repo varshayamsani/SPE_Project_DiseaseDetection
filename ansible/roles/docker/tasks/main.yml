@@ -1,6 +1,107 @@
+#---
+## Docker role: Install and configure Docker
+## This role handles Docker installation and Docker Compose setup
+#
+#- name: Add Docker GPG key
+#  apt_key:
+#    url: https://download.docker.com/linux/ubuntu/gpg
+#    state: present
+#  when: ansible_os_family == "Debian"
+#
+#- name: Add Docker repository
+#  apt_repository:
+#    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+#    state: present
+#  when: ansible_os_family == "Debian"
+#
+#- name: Install Docker
+#  apt:
+#    name:
+#      - docker-ce
+#      - docker-ce-cli
+#      - containerd.io
+#      - docker-compose-plugin
+#    state: present
+#    update_cache: yes
+#  when: ansible_os_family == "Debian"
+#
+#- name: Start and enable Docker service
+#  systemd:
+#    name: docker
+#    state: started
+#    enabled: yes
+#  when: ansible_os_family == "Debian"
+#
+#- name: Add user to docker group
+#  user:
+#    name: "{{ ansible_user }}"
+#    groups: docker
+#    append: yes
+#  when: ansible_os_family == "Debian"
+#
+#- name: Install Docker Compose standalone
+#  get_url:
+#    url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
+#    dest: /usr/local/bin/docker-compose
+#    mode: '0755'
+#  when: ansible_os_family == "Debian"
+#
+#- name: Verify Docker installation
+#  command: docker --version
+#  register: docker_version
+#  changed_when: false
+#
+#- name: Display Docker version
+#  debug:
+#    msg: "Docker version: {{ docker_version.stdout }}"
+#
+
 ---
-# Docker role: Install and configure Docker
-# This role handles Docker installation and Docker Compose setup
+# Docker role (macOS / CI-safe)
+# Assumes Docker Desktop is already installed and running
+
+- name: Check OS
+  debug:
+    msg: "Running Docker role on {{ ansible_os_family }}"
+
+############################################################
+# macOS (Darwin) – Docker Desktop based setup
+############################################################
+
+- name: Verify Docker is installed
+  command: docker --version
+  register: docker_version
+  changed_when: false
+  failed_when: docker_version.rc != 0
+  when: ansible_os_family == "Darwin"
+
+- name: Display Docker version
+  debug:
+    msg: "Docker version: {{ docker_version.stdout }}"
+  when: ansible_os_family == "Darwin"
+
+- name: Verify Docker daemon is running (Docker Desktop)
+  command: docker info
+  register: docker_info
+  changed_when: false
+  failed_when: docker_info.rc != 0
+  when: ansible_os_family == "Darwin"
+
+- name: Check Docker Compose v2 availability
+  command: docker compose version
+  register: compose_version
+  changed_when: false
+  failed_when: compose_version.rc != 0
+  when: ansible_os_family == "Darwin"
+
+- name: Display Docker Compose version
+  debug:
+    msg: "Docker Compose version: {{ compose_version.stdout }}"
+  when: ansible_os_family == "Darwin"
+
+############################################################
+# Linux (Debian/Ubuntu) – OPTIONAL (kept for portability)
+############################################################
 
 - name: Add Docker GPG key
   apt_key:
@@ -30,26 +131,12 @@
     name: docker
     state: started
     enabled: yes
+  when: ansible_os_family == "Debian"
 
 - name: Add user to docker group
   user:
     name: "{{ ansible_user }}"
     groups: docker
     append: yes
-
-- name: Install Docker Compose standalone
-  get_url:
-    url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
-    dest: /usr/local/bin/docker-compose
-    mode: '0755'
-
-- name: Verify Docker installation
-  command: docker --version
-  register: docker_version
-  changed_when: false
-
-- name: Display Docker version
-  debug:
-    msg: "Docker version: {{ docker_version.stdout }}"
-
+  when: ansible_os_family == "Debian"
 

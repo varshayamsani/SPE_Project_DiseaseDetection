@@ -26,19 +26,19 @@
 
 - name: Create application directory
   file:
-    path: /opt/{{ app_name }}
+    path: "{{ app_root }}/{{ app_name }}"
     state: directory
     mode: '0755'
 
 - name: Create log directory
   file:
-    path: /var/log/{{ app_name }}
+    path: "{{ log_root }}/{{ app_name }}"
     state: directory
     mode: '0755'
 
 - name: Create data directory
   file:
-    path: /opt/{{ app_name }}/data
+    path: "{{ app_root }}/{{ app_name }}/data"
     state: directory
     mode: '0755'
 

@@ -200,15 +200,17 @@
 - name: Deploy Disease Detector Application using Roles
   hosts: localhost
   become: no
-  gather_facts: no
+  gather_facts: yes
 
   vars:
-    kubeconfig_path: "{{ kubeconfig_path | default('') }}"
+#    kubeconfig_path: "{{ kubeconfig_path | default('') }}"
     kubernetes_namespace: "{{ kubernetes_namespace | default('disease-detector') }}"
     docker_image_backend: "{{ docker_image_backend | default('varshayamsani/disease-detector-backend:latest') }}"
     docker_image_frontend: "{{ docker_image_frontend | default('varshayamsani/disease-detector-frontend:latest') }}"
-    elk_enabled: "{{ elk_enabled | default(false) }}"
+    elk_enabled: false
     app_name: disease-detector
+    app_root: "{{ ansible_env.HOME }}/apps"
+    log_root: "{{ ansible_env.HOME }}/logs"
 
   # Use roles instead of inline tasks
   # Roles will execute in dependency order:
@@ -221,7 +223,7 @@
     # - Updates packages, installs system tools, creates directories
     - role: common
       vars:
-        app_name: "{{ app_name }}"
+        app_name: disease-detector
 
     # Docker role: Install and configure Docker
     # - Installs Docker CE, Docker Compose
@@ -237,7 +239,6 @@
     # - Verifies deployments
     - role: k8s
       vars:
-        kubeconfig_path: "{{ kubeconfig_path }}"
         kubernetes_namespace: "{{ kubernetes_namespace }}"
         docker_image_backend: "{{ docker_image_backend }}"
         docker_image_frontend: "{{ docker_image_frontend }}"
