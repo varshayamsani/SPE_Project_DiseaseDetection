@@ -1,194 +1,257 @@
+#---
+## Ansible Playbook for Disease Detector Kubernetes Deployment
+## Deploys Kubernetes resources and manages deployments
+#
+#
+#- name: Deploy Kubernetes resources and manage deployments
+#  hosts: localhost
+#  become: no
+#  gather_facts: no
+#
+#  vars:
+#    kubeconfig_path: "{{ kubeconfig_path | default('') }}"
+#    kubernetes_namespace: "{{ kubernetes_namespace | default('disease-detector') }}"
+#    docker_image_backend: "{{ docker_image_backend | default('varshayamsani/disease-detector-backend:latest') }}"
+#    docker_image_frontend: "{{ docker_image_frontend | default('varshayamsani/disease-detector-frontend:latest') }}"
+#
+#  tasks:
+#    - name: Ensure kubectl is available
+#      command: kubectl version --client
+#      register: kubectl_version
+#      failed_when: kubectl_version.rc != 0
+#      changed_when: false
+#
+#    - name: Display kubectl version
+#      debug:
+#        msg: "{{ kubectl_version.stdout }}"
+#
+#    - name: Verify Kubernetes cluster connectivity
+#      shell: |
+#        {% if kubeconfig_path %}
+#        export KUBECONFIG={{ kubeconfig_path }}
+#        {% endif %}
+#        kubectl cluster-info --request-timeout=15s
+#      register: cluster_info
+#      retries: 3
+#      delay: 5
+#      until: cluster_info.rc == 0
+#      failed_when: false
+#      changed_when: false
+#
+#    - name: Fail if cluster is not accessible
+#      fail:
+#        msg: |
+#          ============================================
+#          ERROR: Cannot connect to Kubernetes cluster!
+#          ============================================
+#          Please verify:
+#          1. The cluster is running and accessible
+#          2. The kubeconfig file is valid
+#          3. Network connectivity to the cluster
+#          ============================================
+#      when: cluster_info.rc != 0
+#
+#    - name: Apply Kubernetes deployment YAML files
+#      shell: |
+#        {% if kubeconfig_path %}
+#        export KUBECONFIG={{ kubeconfig_path }}
+#        {% endif %}
+#        set +e  # Don't exit on error, we'll handle retries
+#        KUBECTL_TIMEOUT="--request-timeout=60s"  # Increased timeout for slow API server
+#
+#        # Function to retry kubectl commands
+#        retry_kubectl() {
+#            local cmd="$1"
+#            local max_attempts=3
+#            local attempt=1
+#            local delay=5
+#
+#            while [ $attempt -le $max_attempts ]; do
+#                echo "Attempt $attempt/$max_attempts: $cmd"
+#                if eval "$cmd"; then
+#                    return 0
+#                fi
+#                if [ $attempt -lt $max_attempts ]; then
+#                    echo "Failed, retrying in ${delay}s..."
+#                    sleep $delay
+#                    delay=$((delay * 2))  # Exponential backoff
+#                fi
+#                attempt=$((attempt + 1))
+#            done
+#            echo "Failed after $max_attempts attempts"
+#            return 1
+#        }
+#
+#        # Apply namespace
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/namespace.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
+#
+#        # Deploy Vault (if file exists)
+#        if [ -f "{{ playbook_dir }}/../k8s/vault-deployment.yaml" ]; then
+#            echo "Deploying Vault..."
+#            retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/vault-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || echo "Warning: Vault deployment failed or already exists"
+#
+#            # Wait for Vault to be ready (non-blocking)
+#            echo "Waiting for Vault to be ready..."
+#            kubectl wait --for=condition=ready pod -l app=vault -n {{ kubernetes_namespace }} --timeout=60s 2>/dev/null || echo "Warning: Vault not ready yet, continuing..."
+#        fi
+#
+#        # Apply PVC
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/pvc.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
+#
+#        # Apply ConfigMaps
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/configmap.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/frontend-nginx-configmap.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+#
+#        # Apply Services
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/backend-service.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/frontend-service.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+#
+#        # Apply HPAs
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/backend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/frontend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+#
+#        # Optional: Deploy lightweight ELK stack if enabled
+#        {% if elk_enabled | default(false) %}
+#        echo "Deploying lightweight ELK stack..."
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/elasticsearch-deployment.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
+#        # Apply Fluentd RBAC if file exists (may already be applied)
+#        if [ -f "{{ playbook_dir }}/../k8s/fluentd-rbac.yaml" ]; then
+#          retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/fluentd-rbac.yaml --validate=false $KUBECTL_TIMEOUT" || echo "Warning: Fluentd RBAC apply failed (may already exist)"
+#        else
+#          echo "Warning: fluentd-rbac.yaml not found, skipping (RBAC may already be applied)"
+#        fi
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/fluentd-daemonset.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
+#        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/kibana-deployment.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
+#        {% endif %}
+#
+#        # Update or create deployments
+#        if kubectl get deployment/disease-detector-backend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT &>/dev/null; then
+#          retry_kubectl "kubectl set image deployment/disease-detector-backend backend={{ docker_image_backend }} -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT" || exit 1
+#        else
+#          retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/backend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+#        fi
+#
+#        if kubectl get deployment/disease-detector-frontend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT &>/dev/null; then
+#          retry_kubectl "kubectl set image deployment/disease-detector-frontend frontend={{ docker_image_frontend }} -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT" || exit 1
+#        else
+#          retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/frontend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+#        fi
+#
+#        # Restart deployments (these can fail if pods are already restarting, so make them non-fatal)
+#        kubectl rollout restart deployment/disease-detector-backend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT || echo "Warning: Backend restart failed (may already be restarting)"
+#        kubectl rollout restart deployment/disease-detector-frontend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT || echo "Warning: Frontend restart failed (may already be restarting)"
+#
+#        set -e  # Re-enable exit on error
+#      args:
+#        chdir: "{{ playbook_dir }}/.."
+#      register: apply_result
+#      retries: 3
+#      delay: 15
+#      until: apply_result.rc == 0
+#      failed_when: apply_result.rc != 0
+#
+#    - name: Display apply results
+#      debug:
+#        msg: "{{ apply_result.stdout }}"
+#
+#    - name: Verify Kubernetes deployment
+#      shell: |
+#        {% if kubeconfig_path %}
+#        export KUBECONFIG={{ kubeconfig_path }}
+#        {% endif %}
+#        kubectl get deployments -n {{ kubernetes_namespace }} --request-timeout=15s
+#      register: kubectl_deployments
+#      retries: 3
+#      delay: 5
+#      until: kubectl_deployments.rc == 0
+#      failed_when: kubectl_deployments.rc != 0
+#      changed_when: false
+#
+#    - name: Check if deployments list is empty
+#      set_fact:
+#        deployments_empty: "{{ kubectl_deployments.stdout_lines | length <= 1 }}"
+#      when: kubectl_deployments.stdout_lines is defined
+#
+#    - name: Fail if no deployments found
+#      fail:
+#        msg: |
+#          ============================================
+#          ERROR: No deployments found!
+#          ============================================
+#          Namespace: {{ kubernetes_namespace }}
+#          This indicates that the deployment may have failed.
+#          Please check the logs and verify the Kubernetes cluster.
+#          ============================================
+#      when: deployments_empty | default(false)
+#
+#    - name: Print Kubernetes deployments
+#      debug:
+#        msg: |
+#          ============================================
+#          Kubernetes Deployments Status
+#          ============================================
+#          {{ kubectl_deployments.stdout }}
+#          ============================================
 ---
 # Ansible Playbook for Disease Detector Kubernetes Deployment
-# Deploys Kubernetes resources and manages deployments
+# This version uses Ansible roles for better organization and modularity
+# Deploys Kubernetes resources and manages deployments using roles
 
-
-- name: Deploy Kubernetes resources and manage deployments
+- name: Deploy Disease Detector Application using Roles
   hosts: localhost
   become: no
   gather_facts: no
-  
+
   vars:
     kubeconfig_path: "{{ kubeconfig_path | default('') }}"
     kubernetes_namespace: "{{ kubernetes_namespace | default('disease-detector') }}"
     docker_image_backend: "{{ docker_image_backend | default('varshayamsani/disease-detector-backend:latest') }}"
     docker_image_frontend: "{{ docker_image_frontend | default('varshayamsani/disease-detector-frontend:latest') }}"
-    
-  tasks:
-    - name: Ensure kubectl is available
-      command: kubectl version --client
-      register: kubectl_version
-      failed_when: kubectl_version.rc != 0
-      changed_when: false
-      
-    - name: Display kubectl version
-      debug:
-        msg: "{{ kubectl_version.stdout }}"
-    
-    - name: Verify Kubernetes cluster connectivity
-      shell: |
-        {% if kubeconfig_path %}
-        export KUBECONFIG={{ kubeconfig_path }}
-        {% endif %}
-        kubectl cluster-info --request-timeout=15s
-      register: cluster_info
-      retries: 3
-      delay: 5
-      until: cluster_info.rc == 0
-      failed_when: false
-      changed_when: false
-      
-    - name: Fail if cluster is not accessible
-      fail:
-        msg: |
-          ============================================
-          ERROR: Cannot connect to Kubernetes cluster!
-          ============================================
-          Please verify:
-          1. The cluster is running and accessible
-          2. The kubeconfig file is valid
-          3. Network connectivity to the cluster
-          ============================================
-      when: cluster_info.rc != 0
-        
-    - name: Apply Kubernetes deployment YAML files
-      shell: |
-        {% if kubeconfig_path %}
-        export KUBECONFIG={{ kubeconfig_path }}
-        {% endif %}
-        set +e  # Don't exit on error, we'll handle retries
-        KUBECTL_TIMEOUT="--request-timeout=60s"  # Increased timeout for slow API server
-        
-        # Function to retry kubectl commands
-        retry_kubectl() {
-            local cmd="$1"
-            local max_attempts=3
-            local attempt=1
-            local delay=5
-            
-            while [ $attempt -le $max_attempts ]; do
-                echo "Attempt $attempt/$max_attempts: $cmd"
-                if eval "$cmd"; then
-                    return 0
-                fi
-                if [ $attempt -lt $max_attempts ]; then
-                    echo "Failed, retrying in ${delay}s..."
-                    sleep $delay
-                    delay=$((delay * 2))  # Exponential backoff
-                fi
-                attempt=$((attempt + 1))
-            done
-            echo "Failed after $max_attempts attempts"
-            return 1
-        }
-        
-        # Apply namespace
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/namespace.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
-        
-        # Deploy Vault (if file exists)
-        if [ -f "{{ playbook_dir }}/../k8s/vault-deployment.yaml" ]; then
-            echo "Deploying Vault..."
-            retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/vault-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || echo "Warning: Vault deployment failed or already exists"
-            
-            # Wait for Vault to be ready (non-blocking)
-            echo "Waiting for Vault to be ready..."
-            kubectl wait --for=condition=ready pod -l app=vault -n {{ kubernetes_namespace }} --timeout=60s 2>/dev/null || echo "Warning: Vault not ready yet, continuing..."
-        fi
-        
-        # Apply PVC
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/pvc.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
-        
-        # Apply ConfigMaps
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/configmap.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/frontend-nginx-configmap.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
-        
-        # Apply Services
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/backend-service.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/frontend-service.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
-        
-        # Apply HPAs
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/backend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/frontend-hpa.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
+    elk_enabled: "{{ elk_enabled | default(false) }}"
+    app_name: disease-detector
 
-        # Optional: Deploy lightweight ELK stack if enabled
-        {% if elk_enabled | default(false) %}
-        echo "Deploying lightweight ELK stack..."
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/elasticsearch-deployment.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
-        # Apply Fluentd RBAC if file exists (may already be applied)
-        if [ -f "{{ playbook_dir }}/../k8s/fluentd-rbac.yaml" ]; then
-          retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/fluentd-rbac.yaml --validate=false $KUBECTL_TIMEOUT" || echo "Warning: Fluentd RBAC apply failed (may already exist)"
-        else
-          echo "Warning: fluentd-rbac.yaml not found, skipping (RBAC may already be applied)"
-        fi
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/fluentd-daemonset.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
-        retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/kibana-deployment.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
-        {% endif %}
-        
-        # Update or create deployments
-        if kubectl get deployment/disease-detector-backend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT &>/dev/null; then
-          retry_kubectl "kubectl set image deployment/disease-detector-backend backend={{ docker_image_backend }} -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT" || exit 1
-        else
-          retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/backend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
-        fi
-        
-        if kubectl get deployment/disease-detector-frontend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT &>/dev/null; then
-          retry_kubectl "kubectl set image deployment/disease-detector-frontend frontend={{ docker_image_frontend }} -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT" || exit 1
-        else
-          retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/frontend-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || exit 1
-        fi
-        
-        # Restart deployments (these can fail if pods are already restarting, so make them non-fatal)
-        kubectl rollout restart deployment/disease-detector-backend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT || echo "Warning: Backend restart failed (may already be restarting)"
-        kubectl rollout restart deployment/disease-detector-frontend -n {{ kubernetes_namespace }} $KUBECTL_TIMEOUT || echo "Warning: Frontend restart failed (may already be restarting)"
-        
-        set -e  # Re-enable exit on error
-      args:
-        chdir: "{{ playbook_dir }}/.."
-      register: apply_result
-      retries: 3
-      delay: 15
-      until: apply_result.rc == 0
-      failed_when: apply_result.rc != 0
-      
-    - name: Display apply results
-      debug:
-        msg: "{{ apply_result.stdout }}"
-        
-    - name: Verify Kubernetes deployment
-      shell: |
-        {% if kubeconfig_path %}
-        export KUBECONFIG={{ kubeconfig_path }}
-        {% endif %}
-        kubectl get deployments -n {{ kubernetes_namespace }} --request-timeout=15s
-      register: kubectl_deployments
-      retries: 3
-      delay: 5
-      until: kubectl_deployments.rc == 0
-      failed_when: kubectl_deployments.rc != 0
-      changed_when: false
-      
-    - name: Check if deployments list is empty
-      set_fact:
-        deployments_empty: "{{ kubectl_deployments.stdout_lines | length <= 1 }}"
-      when: kubectl_deployments.stdout_lines is defined
-      
-    - name: Fail if no deployments found
-      fail:
-        msg: |
-          ============================================
-          ERROR: No deployments found!
-          ============================================
-          Namespace: {{ kubernetes_namespace }}
-          This indicates that the deployment may have failed.
-          Please check the logs and verify the Kubernetes cluster.
-          ============================================
-      when: deployments_empty | default(false)
-      
-    - name: Print Kubernetes deployments
-      debug:
-        msg: |
-          ============================================
-          Kubernetes Deployments Status
-          ============================================
-          {{ kubectl_deployments.stdout }}
-          ============================================
+  # Use roles instead of inline tasks
+  # Roles will execute in dependency order:
+  # 1. common (no dependencies)
+  # 2. docker (depends on common)
+  # 3. k8s (depends on common and docker)
+  # 4. elk (depends on common and docker, only if enabled)
+  roles:
+    # Common role: System setup and prerequisites
+    # - Updates packages, installs system tools, creates directories
+    - role: common
+      vars:
+        app_name: "{{ app_name }}"
+
+    # Docker role: Install and configure Docker
+    # - Installs Docker CE, Docker Compose
+    # - Starts Docker service
+    # - Adds user to docker group
+    - role: docker
+
+    # Kubernetes role: Deploy application to Kubernetes
+    # - Verifies kubectl installation
+    # - Checks cluster connectivity
+    # - Applies Kubernetes manifests
+    # - Updates deployment images
+    # - Verifies deployments
+    - role: k8s
+      vars:
+        kubeconfig_path: "{{ kubeconfig_path }}"
+        kubernetes_namespace: "{{ kubernetes_namespace }}"
+        docker_image_backend: "{{ docker_image_backend }}"
+        docker_image_frontend: "{{ docker_image_frontend }}"
+        elk_enabled: "{{ elk_enabled }}"
+
+    # ELK Stack role: Deploy Elasticsearch, Logstash, and Kibana
+    # - Creates ELK directories
+    # - Deploys ELK Stack with Docker Compose
+    # - Waits for services to be ready
+    # Only runs if elk_enabled is true
+    - role: elk
+      vars:
+        app_name: "{{ app_name }}"
+        elk_deploy: "{{ elk_enabled }}"
+      when: elk_enabled | default(false)
+
+
