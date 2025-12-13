@@ -242,7 +242,7 @@
         kubernetes_namespace: "{{ kubernetes_namespace }}"
         docker_image_backend: "{{ docker_image_backend }}"
         docker_image_frontend: "{{ docker_image_frontend }}"
-        elk_enabled: "{{ elk_enabled }}"
+        elk_enabled: false
 
     # ELK Stack role: Deploy Elasticsearch, Logstash, and Kibana
     # - Creates ELK directories
@@ -251,8 +251,8 @@
     # Only runs if elk_enabled is true
     - role: elk
       vars:
-        app_name: "{{ app_name }}"
-        elk_deploy: "{{ elk_enabled }}"
+        app_name: disease-detector
+        elk_deploy: false
       when: elk_enabled | default(false)
 
 
