@@ -85,6 +85,16 @@
         # Apply namespace
         retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/namespace.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
         
+        # Deploy Vault (if file exists)
+        if [ -f "{{ playbook_dir }}/../k8s/vault-deployment.yaml" ]; then
+            echo "Deploying Vault..."
+            retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/vault-deployment.yaml -n {{ kubernetes_namespace }} --validate=false $KUBECTL_TIMEOUT" || echo "Warning: Vault deployment failed or already exists"
+            
+            # Wait for Vault to be ready (non-blocking)
+            echo "Waiting for Vault to be ready..."
+            kubectl wait --for=condition=ready pod -l app=vault -n {{ kubernetes_namespace }} --timeout=60s 2>/dev/null || echo "Warning: Vault not ready yet, continuing..."
+        fi
+        
         # Apply PVC
         retry_kubectl "kubectl apply -f {{ playbook_dir }}/../k8s/pvc.yaml --validate=false $KUBECTL_TIMEOUT" || exit 1
         

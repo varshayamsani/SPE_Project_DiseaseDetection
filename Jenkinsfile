@@ -97,7 +97,133 @@ pipeline {
                 }
             }
         }
-        // Stage 5: Deploy with Kubernetes
+        // Stage 5: Deploy Vault
+        // Purpose: Deploy and configure HashiCorp Vault for secrets management
+        // Key Actions:
+        //   - Deploys Vault server in Kubernetes
+        //   - Configures Vault with application secrets
+        //   - Sets up policies and tokens
+        stage('Deploy Vault') {
+            steps {
+                echo '========================================'
+                echo 'Stage: Deploy Vault'
+                echo 'Purpose: Deploy and configure HashiCorp Vault for secrets management'
+                echo '========================================'
+                
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
+                        export KUBECONFIG="$KUBECONFIG_FILE"
+                        NAMESPACE=${KUBERNETES_NAMESPACE}
+                        
+                        echo "Deploying Vault..."
+                        echo ""
+                        
+                        # Deploy Vault
+                        echo "📦 Deploying Vault server..."
+                        kubectl apply -f k8s/vault-deployment.yaml -n ${NAMESPACE} --request-timeout=60s || {
+                            echo "⚠️  Vault deployment failed or already exists"
+                        }
+                        
+                        # Wait for Vault to be ready
+                        echo "Waiting for Vault to be ready..."
+                        kubectl wait --for=condition=ready pod -l app=vault -n ${NAMESPACE} --timeout=120s || {
+                            echo "⚠️  Vault not ready after 2 minutes, but continuing..."
+                        }
+                        
+                        # Wait a bit more for Vault to fully initialize
+                        echo "Waiting for Vault to initialize..."
+                        sleep 5
+                        
+                        # Configure Vault (setup secrets)
+                        echo ""
+                        echo "Configuring Vault..."
+                        echo ""
+                        
+                        # Install curl if not available (for Vault API calls)
+                        if ! command -v curl &> /dev/null; then
+                            echo "Installing curl..."
+                            if command -v apt-get &> /dev/null; then
+                                sudo apt-get update && sudo apt-get install -y curl
+                            elif command -v yum &> /dev/null; then
+                                sudo yum install -y curl
+                            elif command -v brew &> /dev/null; then
+                                brew install curl || true
+                            fi
+                        fi
+                        
+                        # Set Vault address
+                        VAULT_ADDR="http://vault.${NAMESPACE}.svc.cluster.local:8200"
+                        VAULT_TOKEN="root-token-12345"
+                        
+                        # Wait for Vault API to be ready
+                        echo "Checking Vault API availability..."
+                        for i in $(seq 1 30); do
+                            if curl -s -f -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/sys/health" > /dev/null 2>&1; then
+                                echo "✅ Vault API is ready"
+                                break
+                            fi
+                            echo "  Attempt $i/30 - Waiting for Vault API..."
+                            sleep 2
+                        done
+                        
+                        # Enable KV v2 secrets engine if not already enabled
+                        echo "Enabling KV v2 secrets engine..."
+                        curl -s -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+                            "$VAULT_ADDR/v1/sys/mounts/disease-detector" \
+                            -d '{"type":"kv","options":{"version":"2"}}' > /dev/null 2>&1 || {
+                            echo "ℹ️  KV secrets engine may already be enabled"
+                        }
+                        
+                        # Store application secrets
+                        echo "Storing application secrets in Vault..."
+                        
+                        # Store app config
+                        curl -s -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+                            "$VAULT_ADDR/v1/disease-detector/data/app" \
+                            -d '{
+                                "data": {
+                                    "flask_env": "production",
+                                    "log_level": "INFO",
+                                    "elasticsearch_host": "elasticsearch.'${NAMESPACE}'.svc.cluster.local",
+                                    "elasticsearch_port": "9200",
+                                    "database_path": "/app/data/patients.db",
+                                    "cors_origins": "http://disease-detector-frontend.'${NAMESPACE}'.svc.cluster.local,http://localhost:3000"
+                                }
+                            }' > /dev/null && echo "  ✅ Application config stored" || echo "  ⚠️  Failed to store app config"
+                        
+                        # Store database config
+                        curl -s -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+                            "$VAULT_ADDR/v1/disease-detector/data/database" \
+                            -d '{
+                                "data": {
+                                    "path": "/app/data/patients.db",
+                                    "type": "sqlite"
+                                }
+                            }' > /dev/null && echo "  ✅ Database config stored" || echo "  ⚠️  Failed to store database config"
+                        
+                        # Create policy
+                        echo "Creating Vault policy..."
+                        curl -s -X PUT -H "X-Vault-Token: $VAULT_TOKEN" \
+                            "$VAULT_ADDR/v1/sys/policies/acl/disease-detector-policy" \
+                            -d '{
+                                "policy": "path \"disease-detector/data/*\" { capabilities = [\"read\"] }"
+                            }' > /dev/null && echo "  ✅ Policy created" || echo "  ⚠️  Failed to create policy"
+                        
+                        echo ""
+                        echo "=========================================="
+                        echo "Vault Deployment Summary"
+                        echo "=========================================="
+                        kubectl get pods -n ${NAMESPACE} -l app=vault || true
+                        kubectl get svc -n ${NAMESPACE} vault || true
+                        echo ""
+                        echo "✅ Vault is deployed and configured"
+                        echo "=========================================="
+                    '''
+                }
+            }
+        }
+        
+        // Stage 6: Deploy with Kubernetes
         // Purpose: Deploy the application using Kubernetes and Ansible
         // Key Actions:
         //   - Configures access to the Kubernetes cluster using the kubeconfig credentials
@@ -284,7 +410,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             }
         }
         
-        // Stage 6: Deploy ELK Stack (Optional)
+        // Stage 7: Deploy ELK Stack (Optional)
         stage('Deploy ELK Stack') {
             when {
                 expression { 
@@ -374,7 +500,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             }
         }
         
-        // Stage 7: Health Check
+        // Stage 8: Health Check
 //         stage('Health Check') {
 //             steps {
 //                 echo 'Performing health checks...'

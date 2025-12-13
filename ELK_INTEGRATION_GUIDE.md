@@ -385,3 +385,4 @@ kubectl port-forward svc/kibana 5601:5601 -n disease-detector
 Would you like me to help you implement a specific option?
 
 
+

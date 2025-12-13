@@ -19,6 +19,66 @@ spec:
         app: disease-detector-backend
         component: backend
     spec:
+      # Init container to fetch secrets from Vault
+      initContainers:
+      - name: vault-init
+        image: curlimages/curl:latest  # Has curl and can parse JSON with awk/sed
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "=========================================="
+          echo "Fetching secrets from Vault..."
+          echo "=========================================="
+          
+          VAULT_ADDR="http://vault.disease-detector.svc.cluster.local:8200"
+          VAULT_TOKEN="root-token-12345"
+          
+          # Wait for Vault to be ready
+          echo "Checking Vault connectivity..."
+          for i in $(seq 1 10); do
+            if curl -s -f -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/sys/health" > /dev/null 2>&1; then
+              echo "✅ Vault is accessible"
+              break
+            fi
+            echo "  Attempt $i/10 - Waiting for Vault..."
+            sleep 2
+          done
+          
+          # Fetch secrets from Vault
+          echo "Fetching secrets from Vault..."
+          RESPONSE=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/disease-detector/data/app" || echo "")
+          
+          if [ -z "$RESPONSE" ] || echo "$RESPONSE" | grep -q "errors"; then
+            echo "⚠️  Warning: Could not fetch from Vault, using defaults"
+            echo "production" > /vault-secrets/FLASK_ENV
+            echo "INFO" > /vault-secrets/LOG_LEVEL
+            echo "elasticsearch.disease-detector.svc.cluster.local" > /vault-secrets/ELASTICSEARCH_HOST
+            echo "9200" > /vault-secrets/ELASTICSEARCH_PORT
+            echo "/app/data/patients.db" > /vault-secrets/DATABASE_PATH
+            echo "http://disease-detector-frontend.disease-detector.svc.cluster.local,http://localhost:3000" > /vault-secrets/CORS_ORIGINS
+          else
+            # Extract values from JSON response (Vault KV v2 format)
+            echo "$RESPONSE" | grep -o '"flask_env":"[^"]*"' | cut -d'"' -f4 > /vault-secrets/FLASK_ENV || echo "production" > /vault-secrets/FLASK_ENV
+            echo "$RESPONSE" | grep -o '"log_level":"[^"]*"' | cut -d'"' -f4 > /vault-secrets/LOG_LEVEL || echo "INFO" > /vault-secrets/LOG_LEVEL
+            echo "$RESPONSE" | grep -o '"elasticsearch_host":"[^"]*"' | cut -d'"' -f4 > /vault-secrets/ELASTICSEARCH_HOST || echo "elasticsearch.disease-detector.svc.cluster.local" > /vault-secrets/ELASTICSEARCH_HOST
+            echo "$RESPONSE" | grep -o '"elasticsearch_port":"[^"]*"' | cut -d'"' -f4 > /vault-secrets/ELASTICSEARCH_PORT || echo "9200" > /vault-secrets/ELASTICSEARCH_PORT
+            echo "$RESPONSE" | grep -o '"database_path":"[^"]*"' | cut -d'"' -f4 > /vault-secrets/DATABASE_PATH || echo "/app/data/patients.db" > /vault-secrets/DATABASE_PATH
+            echo "$RESPONSE" | grep -o '"cors_origins":"[^"]*"' | cut -d'"' -f4 > /vault-secrets/CORS_ORIGINS || echo "http://disease-detector-frontend.disease-detector.svc.cluster.local,http://localhost:3000" > /vault-secrets/CORS_ORIGINS
+          fi
+          
+          echo ""
+          echo "✅ Secrets fetched from Vault:"
+          echo "  FLASK_ENV=$(cat /vault-secrets/FLASK_ENV)"
+          echo "  LOG_LEVEL=$(cat /vault-secrets/LOG_LEVEL)"
+          echo "  ELASTICSEARCH_HOST=$(cat /vault-secrets/ELASTICSEARCH_HOST)"
+          echo "  ELASTICSEARCH_PORT=$(cat /vault-secrets/ELASTICSEARCH_PORT)"
+          echo "  DATABASE_PATH=$(cat /vault-secrets/DATABASE_PATH)"
+          echo "=========================================="
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault-secrets
       containers:
       - name: backend
         image: varshayamsani/disease-detector-backend:latest  # Will be updated by Jenkins
@@ -27,7 +87,37 @@ spec:
         - containerPort: 5001
           name: http
           protocol: TCP
+        # Command to load Vault secrets before starting app
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          # Load secrets from Vault files
+          if [ -d "/vault-secrets" ]; then
+            echo "Loading secrets from Vault..."
+            export FLASK_ENV=$(cat /vault-secrets/FLASK_ENV 2>/dev/null || echo "production")
+            export LOG_LEVEL=$(cat /vault-secrets/LOG_LEVEL 2>/dev/null || echo "INFO")
+            export ELASTICSEARCH_HOST=$(cat /vault-secrets/ELASTICSEARCH_HOST 2>/dev/null || echo "elasticsearch.disease-detector.svc.cluster.local")
+            export ELASTICSEARCH_PORT=$(cat /vault-secrets/ELASTICSEARCH_PORT 2>/dev/null || echo "9200")
+            export DATABASE_PATH=$(cat /vault-secrets/DATABASE_PATH 2>/dev/null || echo "/app/data/patients.db")
+            export CORS_ORIGINS=$(cat /vault-secrets/CORS_ORIGINS 2>/dev/null || echo "http://disease-detector-frontend.disease-detector.svc.cluster.local,http://localhost:3000")
+            echo "✅ Using secrets from Vault"
+            echo "  FLASK_ENV=$FLASK_ENV"
+            echo "  LOG_LEVEL=$LOG_LEVEL"
+            echo "  ELASTICSEARCH_HOST=$ELASTICSEARCH_HOST"
+          else
+            echo "⚠️  Vault secrets not found, using defaults"
+            export FLASK_ENV=${FLASK_ENV:-production}
+            export LOG_LEVEL=${LOG_LEVEL:-INFO}
+            export ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-elasticsearch.disease-detector.svc.cluster.local}
+            export ELASTICSEARCH_PORT=${ELASTICSEARCH_PORT:-9200}
+            export DATABASE_PATH=${DATABASE_PATH:-/app/data/patients.db}
+            export CORS_ORIGINS=${CORS_ORIGINS:-http://disease-detector-frontend.disease-detector.svc.cluster.local,http://localhost:3000}
+          fi
+          # Start the application
+          exec python app.py
         env:
+        # Fallback values (will be overridden by Vault secrets if available)
         - name: FLASK_ENV
           value: "production"
         - name: DATABASE_PATH
@@ -40,6 +130,11 @@ spec:
           value: "INFO"
         - name: CORS_ORIGINS
           value: "http://disease-detector-frontend.disease-detector.svc.cluster.local,http://localhost:3000"
+        # Vault status indicators
+        - name: VAULT_ENABLED
+          value: "true"
+        - name: VAULT_ADDR
+          value: "http://vault.disease-detector.svc.cluster.local:8200"
         resources:
 #          requests:
 #            memory: "512Mi"
@@ -48,11 +143,11 @@ spec:
 #            memory: "2Gi"
 #            cpu: "1000m"
           requests:
-            cpu: "2000m"
-            memory: "4Gi"
-          limits:
             cpu: "2"
-            memory: "6Gi"
+            memory: "3Gi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
 #            resources:
 #              limits:
 #                cpu: "2"
@@ -82,7 +177,7 @@ spec:
           httpGet:
             path: /health
             port: 5001
-          initialDelaySeconds: 360   # give 4 minutes to load models
+          initialDelaySeconds: 240   # give 4 minutes to load models
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 5
@@ -102,10 +197,15 @@ spec:
           mountPath: /app/data
         - name: logs-volume
           mountPath: /app/logs
+        - name: vault-secrets
+          mountPath: /vault-secrets
+          readOnly: true
       volumes:
       - name: data-volume
         persistentVolumeClaim:
           claimName: disease-detector-data
       - name: logs-volume
+        emptyDir: {}
+      - name: vault-secrets
         emptyDir: {}
 

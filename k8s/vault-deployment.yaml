@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault
+  namespace: disease-detector
+  labels:
+    app: vault
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vault
+  template:
+    metadata:
+      labels:
+        app: vault
+    spec:
+      containers:
+      - name: vault
+        image: hashicorp/vault:1.15
+        args:
+        - server
+        - -dev
+        - -dev-root-token-id=root-token-12345
+        - -dev-listen-address=0.0.0.0:8200
+        ports:
+        - containerPort: 8200
+          name: http
+          protocol: TCP
+        env:
+        - name: VAULT_DEV_ROOT_TOKEN_ID
+          value: "root-token-12345"
+        - name: VAULT_ADDR
+          value: "http://0.0.0.0:8200"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: vault-data
+          mountPath: /vault/data
+      volumes:
+      - name: vault-data
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: disease-detector
+  labels:
+    app: vault
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8200
+    targetPort: 8200
+    protocol: TCP
+    name: http
+  selector:
+    app: vault
+

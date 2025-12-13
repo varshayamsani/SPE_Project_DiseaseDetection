@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-agent-config
+  namespace: disease-detector
+data:
+  vault-agent.hcl: |
+    # Vault Agent configuration for Disease Detector
+    # This runs as a sidecar and injects secrets as files
+    
+    pid_file = "/tmp/vault-agent.pid"
+    
+    vault {
+      address = "http://vault.disease-detector.svc.cluster.local:8200"
+    }
+    
+    # Auto-auth using Kubernetes service account
+    auto_auth {
+      method {
+        type = "kubernetes"
+        config = {
+          role = "disease-detector-role"
+          mount_path = "auth/kubernetes"
+        }
+      }
+      
+      sink {
+        type = "file"
+        config = {
+          path = "/tmp/vault-token"
+        }
+      }
+    }
+    
+    # Template to write secrets as environment files
+    template {
+      source = "/vault/secrets/app-config.ctmpl"
+      destination = "/vault/secrets/app-config.env"
+      command = "/bin/sh -c 'export $(cat /vault/secrets/app-config.env | xargs)'"
+    }
+    
+    # Template for individual secret files
+    template {
+      source = "/vault/secrets/flask-env.ctmpl"
+      destination = "/vault/secrets/FLASK_ENV"
+    }
+    
+    template {
+      source = "/vault/secrets/log-level.ctmpl"
+      destination = "/vault/secrets/LOG_LEVEL"
+    }
+    
+    template {
+      source = "/vault/secrets/elasticsearch-host.ctmpl"
+      destination = "/vault/secrets/ELASTICSEARCH_HOST"
+    }
+    
+    template {
+      source = "/vault/secrets/elasticsearch-port.ctmpl"
+      destination = "/vault/secrets/ELASTICSEARCH_PORT"
+    }
+    
+    template {
+      source = "/vault/secrets/database-path.ctmpl"
+      destination = "/vault/secrets/DATABASE_PATH"
+    }
+    
+    # Cache configuration
+    cache {
+      use_auto_auth_token = true
+    }
+    
+  # Template files for Vault Agent
+  app-config.ctmpl: |
+    {{- with secret "disease-detector/data/app" }}
+    FLASK_ENV={{ .Data.data.flask_env }}
+    LOG_LEVEL={{ .Data.data.log_level }}
+    ELASTICSEARCH_HOST={{ .Data.data.elasticsearch_host }}
+    ELASTICSEARCH_PORT={{ .Data.data.elasticsearch_port }}
+    DATABASE_PATH={{ .Data.data.database_path }}
+    CORS_ORIGINS={{ .Data.data.cors_origins }}
+    {{- end }}
+  
+  flask-env.ctmpl: |
+    {{- with secret "disease-detector/data/app" }}{{ .Data.data.flask_env }}{{ end }}
+  
+  log-level.ctmpl: |
+    {{- with secret "disease-detector/data/app" }}{{ .Data.data.log_level }}{{ end }}
+  
+  elasticsearch-host.ctmpl: |
+    {{- with secret "disease-detector/data/app" }}{{ .Data.data.elasticsearch_host }}{{ end }}
+  
+  elasticsearch-port.ctmpl: |
+    {{- with secret "disease-detector/data/app" }}{{ .Data.data.elasticsearch_port }}{{ end }}
+  
+  database-path.ctmpl: |
+    {{- with secret "disease-detector/data/app" }}{{ .Data.data.database_path }}{{ end }}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-auth
+  namespace: disease-detector
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-auth
+  namespace: disease-detector
+rules:
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["serviceaccounts/token"]
+  verbs: ["create"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-auth
+  namespace: disease-detector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-auth
+subjects:
+- kind: ServiceAccount
+  name: vault-auth
+  namespace: disease-detector
+
