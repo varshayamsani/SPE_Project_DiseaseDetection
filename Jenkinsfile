@@ -157,30 +157,92 @@ pipeline {
                         
                         # Wait for Vault API to be ready
                         echo "Checking Vault API availability..."
-                        for i in $(seq 1 30); do
-                            if curl -s -f -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/sys/health" > /dev/null 2>&1; then
-                                echo "✅ Vault API is ready"
+                        VAULT_READY=false
+                        
+                        # First, test connectivity from within cluster using a test pod
+                        echo "Testing Vault connectivity from within cluster..."
+                        kubectl run vault-test-$$ --image=curlimages/curl:latest --rm -i --restart=Never -n ${NAMESPACE} --timeout=10s -- \
+                            curl -s -o /dev/null -w "%{http_code}" "http://vault.${NAMESPACE}.svc.cluster.local:8200/v1/sys/health" 2>/dev/null || true
+                        
+                        # Wait for Vault API to be ready (check from Jenkins node)
+                        for i in $(seq 1 40); do
+                            # Vault health endpoint returns:
+                            # 200 = initialized, unsealed, active
+                            # 429 = unsealed, standby
+                            # 501 = not initialized
+                            # 503 = sealed
+                            # We accept 200 or 429 as "ready"
+                            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$VAULT_ADDR/v1/sys/health" 2>/dev/null || echo "000")
+                            
+                            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "429" ]; then
+                                echo "✅ Vault API is ready (HTTP $HTTP_CODE)"
+                                VAULT_READY=true
                                 break
+                            elif [ "$HTTP_CODE" = "501" ]; then
+                                echo "  Attempt $i/40 - Vault not initialized yet (HTTP 501)..."
+                            elif [ "$HTTP_CODE" = "503" ]; then
+                                echo "  Attempt $i/40 - Vault is sealed (HTTP 503)..."
+                            elif [ "$HTTP_CODE" = "000" ]; then
+                                echo "  Attempt $i/40 - Cannot connect to Vault (connection error)..."
+                            else
+                                echo "  Attempt $i/40 - Vault not ready yet (HTTP $HTTP_CODE)..."
                             fi
-                            echo "  Attempt $i/30 - Waiting for Vault API..."
-                            sleep 2
+                            
+                            # Every 10 attempts, check pod status
+                            if [ $((i % 10)) -eq 0 ]; then
+                                echo "  Checking Vault pod status..."
+                                kubectl get pods -n ${NAMESPACE} -l app=vault || true
+                            fi
+                            
+                            sleep 3
                         done
+                        
+                        if [ "$VAULT_READY" = "false" ]; then
+                            echo ""
+                            echo "⚠️  WARNING: Vault API check failed after 40 attempts"
+                            echo "   This might be due to:"
+                            echo "   1. Vault pod not fully started"
+                            echo "   2. Network connectivity issues"
+                            echo "   3. Vault service not accessible"
+                            echo ""
+                            echo "   Checking Vault pod logs..."
+                            VAULT_POD=$(kubectl get pod -n ${NAMESPACE} -l app=vault -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+                            if [ -n "$VAULT_POD" ]; then
+                                kubectl logs -n ${NAMESPACE} $VAULT_POD --tail=20 || true
+                            fi
+                            echo ""
+                            echo "   Continuing anyway - secrets may be configured later..."
+                        fi
                         
                         # Enable KV v2 secrets engine if not already enabled
                         echo "Enabling KV v2 secrets engine..."
-                        curl -s -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
-                            "$VAULT_ADDR/v1/sys/mounts/disease-detector" \
-                            -d '{"type":"kv","options":{"version":"2"}}' > /dev/null 2>&1 || {
-                            echo "ℹ️  KV secrets engine may already be enabled"
-                        }
+                        if [ "$VAULT_READY" = "true" ]; then
+                            MOUNT_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+                                -H "Content-Type: application/json" \
+                                "$VAULT_ADDR/v1/sys/mounts/disease-detector" \
+                                -d '{"type":"kv","options":{"version":"2"}}' 2>&1)
+                            HTTP_CODE=$(echo "$MOUNT_RESPONSE" | tail -n1)
+                            RESPONSE_BODY=$(echo "$MOUNT_RESPONSE" | head -n-1)
+                            
+                            if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+                                echo "  ✅ KV secrets engine enabled"
+                            elif echo "$RESPONSE_BODY" | grep -qi "path is already in use\|already mounted"; then
+                                echo "  ℹ️  KV secrets engine already enabled"
+                            else
+                                echo "  ⚠️  Failed to enable KV secrets engine (HTTP $HTTP_CODE)"
+                                echo "     Response: $(echo "$RESPONSE_BODY" | head -c 200)"
+                                echo "     Will try to use existing mount..."
+                            fi
+                        else
+                            echo "  ⚠️  Skipping KV engine setup (Vault not ready)"
+                        fi
                         
                         # Store application secrets
-                        echo "Storing application secrets in Vault..."
-                        
-                        # Store app config
-                        curl -s -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
-                            "$VAULT_ADDR/v1/disease-detector/data/app" \
-                            -d '{
+                        if [ "$VAULT_READY" = "true" ]; then
+                            echo "Storing application secrets in Vault..."
+                            
+                            # Store app config
+                            APP_SECRET_JSON='{
                                 "data": {
                                     "flask_env": "production",
                                     "log_level": "INFO",
@@ -189,25 +251,76 @@ pipeline {
                                     "database_path": "/app/data/patients.db",
                                     "cors_origins": "http://disease-detector-frontend.'${NAMESPACE}'.svc.cluster.local,http://localhost:3000"
                                 }
-                            }' > /dev/null && echo "  ✅ Application config stored" || echo "  ⚠️  Failed to store app config"
-                        
-                        # Store database config
-                        curl -s -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
-                            "$VAULT_ADDR/v1/disease-detector/data/database" \
-                            -d '{
+                            }'
+                            
+                            APP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+                                -H "Content-Type: application/json" \
+                                "$VAULT_ADDR/v1/disease-detector/data/app" \
+                                -d "$APP_SECRET_JSON" 2>&1)
+                            APP_HTTP_CODE=$(echo "$APP_RESPONSE" | tail -n1)
+                            APP_BODY=$(echo "$APP_RESPONSE" | head -n-1)
+                            
+                            if [ "$APP_HTTP_CODE" = "200" ] || [ "$APP_HTTP_CODE" = "204" ]; then
+                                echo "  ✅ Application config stored"
+                            else
+                                echo "  ⚠️  Failed to store app config (HTTP $APP_HTTP_CODE)"
+                                echo "     Response: $(echo "$APP_BODY" | head -c 200)"
+                                echo "     Will retry from init container..."
+                            fi
+                            
+                            # Store database config
+                            DB_SECRET_JSON='{
                                 "data": {
                                     "path": "/app/data/patients.db",
                                     "type": "sqlite"
                                 }
-                            }' > /dev/null && echo "  ✅ Database config stored" || echo "  ⚠️  Failed to store database config"
+                            }'
+                            
+                            DB_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+                                -H "Content-Type: application/json" \
+                                "$VAULT_ADDR/v1/disease-detector/data/database" \
+                                -d "$DB_SECRET_JSON" 2>&1)
+                            DB_HTTP_CODE=$(echo "$DB_RESPONSE" | tail -n1)
+                            DB_BODY=$(echo "$DB_RESPONSE" | head -n-1)
+                            
+                            if [ "$DB_HTTP_CODE" = "200" ] || [ "$DB_HTTP_CODE" = "204" ]; then
+                                echo "  ✅ Database config stored"
+                            else
+                                echo "  ⚠️  Failed to store database config (HTTP $DB_HTTP_CODE)"
+                                echo "     Response: $(echo "$DB_BODY" | head -c 200)"
+                                echo "     Will retry from init container..."
+                            fi
+                        else
+                            echo "⚠️  Skipping secret storage (Vault not ready)"
+                            echo "   Secrets will be configured when Vault becomes available"
+                            echo "   Backend init container will handle secret retrieval"
+                        fi
                         
-                        # Create policy
-                        echo "Creating Vault policy..."
-                        curl -s -X PUT -H "X-Vault-Token: $VAULT_TOKEN" \
-                            "$VAULT_ADDR/v1/sys/policies/acl/disease-detector-policy" \
-                            -d '{
+                        # Create policy (optional for dev mode)
+                        if [ "$VAULT_READY" = "true" ]; then
+                            echo "Creating Vault policy..."
+                            POLICY_JSON='{
                                 "policy": "path \"disease-detector/data/*\" { capabilities = [\"read\"] }"
-                            }' > /dev/null && echo "  ✅ Policy created" || echo "  ⚠️  Failed to create policy"
+                            }'
+                            
+                            POLICY_RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT -H "X-Vault-Token: $VAULT_TOKEN" \
+                                -H "Content-Type: application/json" \
+                                "$VAULT_ADDR/v1/sys/policies/acl/disease-detector-policy" \
+                                -d "$POLICY_JSON" 2>&1)
+                            POLICY_HTTP_CODE=$(echo "$POLICY_RESPONSE" | tail -n1)
+                            POLICY_BODY=$(echo "$POLICY_RESPONSE" | head -n-1)
+                            
+                            if [ "$POLICY_HTTP_CODE" = "200" ] || [ "$POLICY_HTTP_CODE" = "204" ]; then
+                                echo "  ✅ Policy created"
+                            else
+                                echo "  ⚠️  Failed to create policy (HTTP $POLICY_HTTP_CODE)"
+                                echo "     Response: $(echo "$POLICY_BODY" | head -c 200)"
+                                echo "     Policy is optional for dev mode (using root token)"
+                            fi
+                        else
+                            echo "⚠️  Skipping policy creation (Vault not ready)"
+                            echo "   Using root token in dev mode (no policy needed)"
+                        fi
                         
                         echo ""
                         echo "=========================================="
