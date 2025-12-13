@@ -349,7 +349,7 @@ pipeline {
             }
         }
         
-        // Stage 7: Deploy ELK Stack (Optional)
+        // Stage 7: Deploy ELK Stack
         stage('Deploy ELK Stack') {
             when {
                 expression { 
