@@ -15,7 +15,7 @@ spec:
         - /bin/sh
         - -c
         - |
-          set -e
+          set +e  # Don't exit on policy creation failure
           echo "=========================================="
           echo "Configuring Vault from within cluster..."
           echo "=========================================="
@@ -65,11 +65,8 @@ spec:
           # Create policy
           echo ""
           echo "Creating Vault policy..."
-          vault policy write disease-detector-policy - <<EOF
-          path "disease-detector/data/*" {
-            capabilities = ["read"]
-          }
-          EOF && echo "  ✅ Policy created" || echo "  ⚠️  Failed to create policy (optional in dev mode)"
+          echo 'path "disease-detector/data/*" { capabilities = ["read"] }' | vault policy write disease-detector-policy - && \
+            echo "  ✅ Policy created" || echo "  ⚠️  Failed to create policy (optional in dev mode)"
           
           echo ""
           echo "=========================================="
