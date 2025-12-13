@@ -1,12 +1,8 @@
 // Jenkins Pipeline for Disease Detection Application
-// This pipeline automates: Build -> Test -> Docker Build -> Push -> Deploy
 
 pipeline {
     agent any
-    
-    // Environment variables - credentials from Jenkins credentials store
-    // IMPORTANT: Update DOCKER_IMAGE with your Docker Hub username
-    // Example: DOCKER_IMAGE = 'your-username/disease-detector'
+
     environment {
         DOCKER_HUB_CREDENTIALS = credentials('dockerhub')
         DOCKER_IMAGE_BASE = 'varshayamsani/disease-detector'  // Base name for images
@@ -119,15 +115,15 @@ pipeline {
                         echo ""
                         
                         # Deploy Vault
-                        echo "📦 Deploying Vault server..."
+                        echo " Deploying Vault server..."
                         kubectl apply -f k8s/vault-deployment.yaml -n ${NAMESPACE} --request-timeout=60s || {
-                            echo "⚠️  Vault deployment failed or already exists"
+                            echo " Vault deployment failed or already exists"
                         }
                         
                         # Wait for Vault to be ready
                         echo "Waiting for Vault to be ready..."
                         kubectl wait --for=condition=ready pod -l app=vault -n ${NAMESPACE} --timeout=120s || {
-                            echo "⚠️  Vault not ready after 2 minutes, but continuing..."
+                            echo "Vault not ready after 2 minutes, but continuing..."
                         }
                         
                         # Wait a bit more for Vault to fully initialize
@@ -141,24 +137,24 @@ pipeline {
                         
                         # Delete any existing setup job (non-fatal if permission denied)
                         kubectl delete job vault-setup -n ${NAMESPACE} --ignore-not-found=true 2>/dev/null || {
-                            echo "ℹ️  Could not delete existing job (may not exist or permission denied, continuing...)"
+                            echo " Could not delete existing job (may not exist or permission denied, continuing...)"
                         }
                         
                         # Create and run Vault setup job
                         echo "Creating Vault setup job..."
                         kubectl apply -f k8s/vault-setup-job.yaml -n ${NAMESPACE} || {
-                            echo "⚠️  Failed to create vault-setup job, will configure manually"
+                            echo "Failed to create vault-setup job, will configure manually"
                         }
                         
                         # Wait for job to complete
                         echo "Waiting for Vault configuration to complete..."
-                        if kubectl wait --for=condition=complete --timeout=120s job/vault-setup -n ${NAMESPACE} 2>/dev/null; then
-                            echo "✅ Vault configuration completed successfully"
+                        if kubectl wait --for=condition=complete --timeout=180s job/vault-setup -n ${NAMESPACE} 2>/dev/null; then
+                            echo "Vault configuration completed successfully"
                             echo ""
                             echo "Vault setup job logs:"
                             kubectl logs -n ${NAMESPACE} job/vault-setup --tail=50 || true
                         else
-                            echo "⚠️  Vault setup job did not complete in time"
+                            echo " Vault setup job did not complete in time"
                             echo "   Checking job status..."
                             kubectl get job vault-setup -n ${NAMESPACE} || true
                             echo ""
@@ -171,7 +167,7 @@ pipeline {
                         # Clean up job (non-fatal if permission denied)
                         echo "Cleaning up setup job..."
                         kubectl delete job vault-setup -n ${NAMESPACE} --ignore-not-found=true 2>/dev/null || {
-                            echo "ℹ️  Could not delete job (permission denied, will auto-cleanup after TTL)"
+                            echo " Could not delete job (permission denied, will auto-cleanup after TTL)"
                         }
                         
                         echo ""
@@ -181,7 +177,7 @@ pipeline {
                         kubectl get pods -n ${NAMESPACE} -l app=vault || true
                         kubectl get svc -n ${NAMESPACE} vault || true
                         echo ""
-                        echo "✅ Vault is deployed and configured"
+                        echo "Vault is deployed and configured"
                         echo "=========================================="
                     '''
                 }
@@ -211,15 +207,7 @@ pipeline {
                         fi
                         ansible-playbook --version
                     '''
-                    
 
-                    // Uses Jenkins Kubernetes plugin withKubeConfig
-//                     withCredentials([file(credentialsId: 'kubeconfig', variable: 'KCFG')]) {
-//                         sh """
-//                             export KUBECONFIG=$KCFG
-//                             kubectl get ns
-//                         """
-//                     }
 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]) {
     echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
     // Store non-secret values in environment variables to avoid Groovy interpolation of secrets
@@ -272,11 +260,11 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             CLUSTER_INFO_EXIT=$?
             
             if [ $CLUSTER_INFO_EXIT -eq 0 ]; then
-                echo "✅ Successfully connected to cluster!"
+                echo " Successfully connected to cluster!"
                 break
             else
                 if [ $i -lt $MAX_RETRIES ]; then
-                    echo "⚠️  Connection failed, retrying in ${RETRY_DELAY}s..."
+                    echo "  Connection failed, retrying in ${RETRY_DELAY}s..."
                     echo "Error: $CLUSTER_INFO_OUTPUT"
                     sleep $RETRY_DELAY
                     RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
@@ -296,7 +284,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             
             # Detect if running in Docker
             if [ -f /.dockerenv ] || grep -q docker /proc/self/cgroup 2>/dev/null; then
-                echo "⚠️  Jenkins appears to be running in Docker"
+                echo " Jenkins appears to be running in Docker"
                 echo ""
                 echo "If using minikube, try updating kubeconfig to use:"
                 echo "  - host.docker.internal (macOS/Windows Docker Desktop)"
@@ -322,7 +310,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             SERVER_URL=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo "unknown")
             echo "     - Current server URL: $SERVER_URL"
             if [[ "$SERVER_URL" == *"127.0.0.1"* ]] || [[ "$SERVER_URL" == *"localhost"* ]]; then
-                echo "     - ⚠️  Using localhost - if Jenkins is in Docker, this won't work"
+                echo "     -  Using localhost - if Jenkins is in Docker, this won't work"
                 echo "     - Solution: Update kubeconfig to use host.docker.internal or host IP"
             fi
             echo ""
@@ -340,10 +328,10 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
         # Additional verification: check if we can get nodes
         echo "Verifying node access..."
         if kubectl get nodes --request-timeout=10s &>/dev/null; then
-            echo "✅ Successfully connected to cluster"
+            echo "Successfully connected to cluster"
             kubectl get nodes --request-timeout=10s
         else
-            echo "⚠️  Warning: Could not retrieve nodes, but cluster-info succeeded"
+            echo " Warning: Could not retrieve nodes, but cluster-info succeeded"
         fi
         echo ""
 
@@ -358,19 +346,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
     '''
 }
 
-//                     withKubeConfig([credentialsId: 'kubeconfig', serverUrl: '']) {
-//                         // Run Ansible playbook (playbook.yaml) to deploy the application
-//                         echo 'Running Ansible playbook (playbook.yaml) to deploy application...'
-//                         sh """
-//                             cd ansible
-//                             ansible-playbook -i inventory.yml playbook.yaml \
-//                                 -e "kubeconfig_path=\${KUBECONFIG}" \
-//                                 -e "docker_image_backend=${DOCKER_IMAGE_BACKEND}:${DOCKER_TAG}" \
-//                                 -e "docker_image_frontend=${DOCKER_IMAGE_FRONTEND}:${DOCKER_TAG}" \
-//                                 -e "kubernetes_namespace=${KUBERNETES_NAMESPACE}" \
-//                                 -v
-//                         """
-//                     }
+                    }
                 }
             }
         }
@@ -397,37 +373,37 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         echo ""
                         
                         # Deploy Elasticsearch
-                        echo "📦 Deploying Elasticsearch..."
+                        echo " Deploying Elasticsearch..."
                         kubectl apply -f k8s/elasticsearch-deployment.yaml -n ${NAMESPACE} --request-timeout=60s || {
-                            echo "⚠️  Elasticsearch deployment failed or already exists"
+                            echo "Elasticsearch deployment failed or already exists"
                         }
                         
                         # Deploy Fluentd RBAC (if file exists)
                         if [ -f "k8s/fluentd-rbac.yaml" ]; then
-                            echo "📦 Deploying Fluentd RBAC..."
+                            echo " Deploying Fluentd RBAC..."
                             kubectl apply -f k8s/fluentd-rbac.yaml -n ${NAMESPACE} --request-timeout=60s || {
-                                echo "⚠️  Fluentd RBAC deployment failed or already exists"
+                                echo " Fluentd RBAC deployment failed or already exists"
                             }
                         else
-                            echo "ℹ️  fluentd-rbac.yaml not found, skipping (RBAC may already be applied)"
+                            echo " fluentd-rbac.yaml not found, skipping (RBAC may already be applied)"
                         fi
                         
                         # Deploy Fluentd DaemonSet
-                        echo "📦 Deploying Fluentd DaemonSet..."
+                        echo "Deploying Fluentd DaemonSet..."
                         kubectl apply -f k8s/fluentd-daemonset.yaml -n ${NAMESPACE} --request-timeout=60s || {
-                            echo "❌ Fluentd deployment failed"
+                            echo "Fluentd deployment failed"
                             exit 1
                         }
                         
                         # Deploy Kibana
-                        echo "📦 Deploying Kibana..."
+                        echo "Deploying Kibana..."
                         kubectl apply -f k8s/kibana-deployment.yaml -n ${NAMESPACE} --request-timeout=60s || {
-                            echo "❌ Kibana deployment failed"
+                            echo "Kibana deployment failed"
                             exit 1
                         }
                         
                         echo ""
-                        echo "✅ ELK stack deployment initiated"
+                        echo "ELK stack deployment initiated"
                         echo ""
                         echo "Waiting for ELK components to be ready..."
                         echo "This may take a few minutes..."
@@ -435,19 +411,19 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         # Wait for Elasticsearch
                         echo "Waiting for Elasticsearch..."
                         kubectl wait --for=condition=available --timeout=300s deployment/elasticsearch -n ${NAMESPACE} || {
-                            echo "⚠️  Elasticsearch not ready after 5 minutes, but continuing..."
+                            echo "Elasticsearch not ready after 5 minutes, but continuing..."
                         }
                         
                         # Wait for Kibana
                         echo "Waiting for Kibana..."
                         kubectl wait --for=condition=available --timeout=300s deployment/kibana -n ${NAMESPACE} || {
-                            echo "⚠️  Kibana not ready after 5 minutes, but continuing..."
+                            echo "Kibana not ready after 5 minutes, but continuing..."
                         }
                         
                         # Check Fluentd DaemonSet
                         echo "Checking Fluentd DaemonSet..."
                         kubectl get daemonset/fluentd -n ${NAMESPACE} || {
-                            echo "⚠️  Fluentd DaemonSet not found"
+                            echo " Fluentd DaemonSet not found"
                         }
                         
                         echo ""
@@ -465,22 +441,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
             }
         }
         
-        // Stage 8: Health Check
-//         stage('Health Check') {
-//             steps {
-//                 echo 'Performing health checks...'
-//                 sh '''
-//                     sleep 15
-//                     # Check backend health
-//                     kubectl run health-check --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-//                         curl -f http://disease-detector-backend-service:5001/health || exit 1
-//
-//                     # Check frontend health
-//                     kubectl run frontend-health-check --image=curlimages/curl:latest --rm -i --restart=Never -n ${KUBERNETES_NAMESPACE} -- \
-//                         curl -f http://disease-detector-frontend-service/health || exit 1
-//                 '''
-//             }
-//         }
+        }
         stage('Health Check') {
             steps {
                 echo 'Performing health checks...'
@@ -496,9 +457,9 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         # Wait for backend deployment to be ready
                         echo "Waiting for backend deployment..."
                         if kubectl wait --for=condition=available --timeout=300s deployment/disease-detector-backend -n ${NAMESPACE}; then
-                            echo "✅ Backend deployment is ready"
+                            echo " Backend deployment is ready"
                         else
-                            echo "⚠️  Backend deployment not ready after 5 minutes, checking status..."
+                            echo " Backend deployment not ready after 5 minutes, checking status..."
                             kubectl get deployment/disease-detector-backend -n ${NAMESPACE}
                             kubectl get pods -n ${NAMESPACE} -l app=disease-detector-backend
                         fi
@@ -506,9 +467,9 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         # Wait for frontend deployment to be ready
                         echo "Waiting for frontend deployment..."
                         if kubectl wait --for=condition=available --timeout=300s deployment/disease-detector-frontend -n ${NAMESPACE}; then
-                            echo "✅ Frontend deployment is ready"
+                            echo " Frontend deployment is ready"
                         else
-                            echo "⚠️  Frontend deployment not ready after 5 minutes, checking status..."
+                            echo "Frontend deployment not ready after 5 minutes, checking status..."
                             kubectl get deployment/disease-detector-frontend -n ${NAMESPACE}
                             kubectl get pods -n ${NAMESPACE} -l app=disease-detector-frontend
                         fi
@@ -528,7 +489,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                       echo "Backend health attempt $i/$ATTEMPTS..."
                             if kubectl run backend-health-check-$i --image=curlimages/curl:latest --rm -i --restart=Never --timeout=30s -n ${NAMESPACE} -- \
                                  curl -fsS --max-time 10 http://disease-detector-backend-service:5001/health 2>/dev/null; then
-                                echo "✅ Backend is healthy!"
+                                echo "Backend is healthy!"
                                 BACKEND_HEALTHY=true
                         break
                       fi
@@ -537,7 +498,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         done
                         
                         if [ "$BACKEND_HEALTHY" = "false" ]; then
-                            echo "⚠️  Backend health check failed after ${ATTEMPTS} attempts"
+                            echo "Backend health check failed after ${ATTEMPTS} attempts"
                             echo "Checking backend pod logs..."
                             kubectl logs -n ${NAMESPACE} -l app=disease-detector-backend --tail=20 || true
                         fi
@@ -551,7 +512,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                             echo "Frontend health attempt $i/$ATTEMPTS..."
                             if kubectl run frontend-health-check-$i --image=curlimages/curl:latest --rm -i --restart=Never --timeout=30s -n ${NAMESPACE} -- \
                                  curl -fsS --max-time 10 http://disease-detector-frontend-service/health 2>/dev/null; then
-                                echo "✅ Frontend is healthy!"
+                                echo " Frontend is healthy!"
                                 FRONTEND_HEALTHY=true
                                 break
                             fi
@@ -560,7 +521,7 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         done
                         
                         if [ "$FRONTEND_HEALTHY" = "false" ]; then
-                            echo "⚠️  Frontend health check failed after ${ATTEMPTS} attempts"
+                            echo " Frontend health check failed after ${ATTEMPTS} attempts"
                             echo "Checking frontend pod logs..."
                             kubectl logs -n ${NAMESPACE} -l app=disease-detector-frontend --tail=20 || true
                         fi
@@ -569,18 +530,18 @@ withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')]
                         echo "=========================================="
                         echo "Health Check Summary"
                         echo "=========================================="
-                        echo "Backend: $([ "$BACKEND_HEALTHY" = "true" ] && echo "✅ Healthy" || echo "❌ Unhealthy")"
-                        echo "Frontend: $([ "$FRONTEND_HEALTHY" = "true" ] && echo "✅ Healthy" || echo "❌ Unhealthy")"
+                        echo "Backend: $([ "$BACKEND_HEALTHY" = "true" ] && echo "Healthy" || echo "Unhealthy")"
+                        echo "Frontend: $([ "$FRONTEND_HEALTHY" = "true" ] && echo "Healthy" || echo "Unhealthy")"
                         echo ""
                         
                         # Only fail if both are unhealthy
                         if [ "$BACKEND_HEALTHY" = "false" ] && [ "$FRONTEND_HEALTHY" = "false" ]; then
-                            echo "❌ Both services are unhealthy. Failing health check."
+                            echo "Both services are unhealthy. Failing health check."
                             exit 1
                         elif [ "$BACKEND_HEALTHY" = "false" ] || [ "$FRONTEND_HEALTHY" = "false" ]; then
-                            echo "⚠️  One or more services are unhealthy, but continuing..."
+                            echo "One or more services are unhealthy, but continuing..."
                         else
-                            echo "✅ All services are healthy!"
+                            echo "All services are healthy!"
                         fi
                     '''
                 }
