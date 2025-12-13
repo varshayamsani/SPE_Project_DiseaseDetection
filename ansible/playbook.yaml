@@ -253,6 +253,6 @@
       vars:
         app_name: disease-detector
         elk_deploy: false
-      when: elk_enabled | default(false)
+      when: elk_enabled
 
 
